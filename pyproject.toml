@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hbrace"
+version = "0.1.0"
+description = "Hierarchical Breast cancer Response Analysis using Causal Estimation (HBRACE)"
+readme = "README.md"
+authors = [{name = "Khushi Desai"}, {name = Achsah Marlene Aruva"}]
+requires-python = ">=3.9"
+dependencies = [
+  "pyro-ppl>=1.9.0",
+  "torch>=2.2",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=24.4",
+  "ruff>=0.5",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
