@@ -6,8 +6,8 @@ import argparse
 import torch
 
 from hbrace.config import load_config
-from hbrace.data.synthetic_data import SimulatedDataGenerator
-from hbrace.training import run_vi
+from hbrace.data import sample_synthetic_batch
+from hbrace.models import HBRACEModel
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,13 +38,14 @@ def main() -> None:
     config = load_config(args.config)
     torch.manual_seed(config.vi.seed)
     device = torch.device(args.device)
-    generator = SimulatedDataGenerator.from_model_config(
+    batch = sample_synthetic_batch(
         model_config=config.model,
         n_patients=args.num_patients,
+        device=device,
         seed=config.vi.seed,
     )
-    batch, _ = generator.generate_batch(device=device, return_simulation=True)
-    run_vi(batch, config)
+    model = HBRACEModel(config)
+    model.train(batch, seed=config.vi.seed)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-"""Hierarchical generative model matching the CAIRE-inspired math."""
 from __future__ import annotations
 
 import torch
@@ -13,14 +12,19 @@ from hbrace.utils import nb_logits
 
 
 def _simplex(name: str, shape: torch.Size, value: float = 1.0) -> torch.Tensor:
+    """Helper to create a simplex tensor."""
     tensor = torch.full(shape, value, dtype=torch.float32)
     tensor = tensor / tensor.sum(-1, keepdim=True)
     return pyro_param(name, tensor, constraint=constraints.simplex)
 
 
 def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
-    """Pyro implementation of the graphical model in the proposal."""
+    """Hierarchical Pyro model implementation.
 
+    Args:
+        batch: PatientBatch with counts/responses/subtypes.
+        config: The ModelConfig to use for the model.
+    """
     device = batch.pre_counts.device
     n_patients = batch.responses.shape[0]
     n_cell_types = config.n_cell_types
