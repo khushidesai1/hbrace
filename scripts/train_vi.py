@@ -2,8 +2,8 @@
 import torch
 
 from hbrace.config import load_config
-from hbrace.patient_data import sample_synthetic_batch
 from hbrace.models import HBRACEModel
+from hbrace.patient_data import SimulatedDataGenerator
 
 # %% Load configuration with config path
 config_path = "configs/experiment.yaml"
@@ -13,12 +13,12 @@ seed = 42
 
 config = load_config(config_path)
 torch.manual_seed(seed)
-batch = sample_synthetic_batch(
+generator = SimulatedDataGenerator.from_model_config(
     model_config=config.model,
     n_patients=num_patients,
-    device=device,
     seed=seed,
 )
+batch, _ = generator.generate_batch(device=device, return_simulation=True)
 
 # %% Initialize and train the model
 model = HBRACEModel(config)
