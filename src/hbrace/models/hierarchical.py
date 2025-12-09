@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import torch
-from pyro import deterministic, sample
+from pyro import deterministic, param, sample
 from pyro.distributions import Categorical, Dirichlet, Gamma, NegativeBinomial, Normal
-from pyro.nn import pyro_param
 from torch.distributions import constraints
 
 from hbrace.config import ModelConfig
-from hbrace.data import PatientBatch
+from hbrace.patient_data import PatientBatch
 from hbrace.utils import nb_logits
 
 
@@ -15,7 +14,7 @@ def _simplex(name: str, shape: torch.Size, value: float = 1.0) -> torch.Tensor:
     """Helper to create a simplex tensor."""
     tensor = torch.full(shape, value, dtype=torch.float32)
     tensor = tensor / tensor.sum(-1, keepdim=True)
-    return pyro_param(name, tensor, constraint=constraints.simplex)
+    return param(name, tensor, constraint=constraints.simplex)
 
 
 def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
@@ -47,7 +46,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         Dirichlet(tau.unsqueeze(-1) * subtype_prior).to_event(1),
     )
 
-    mix_shift_basis = pyro_param(
+    mix_shift_basis = param(
         "mix_shift_basis",
         0.01 * torch.randn(config.delta_dim, n_cell_types, device=device),
     )
@@ -68,12 +67,12 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         Normal(torch.zeros(n_patients, config.latent_dim, device=device), 1.0).to_event(1),
     )
 
-    base_pre_rate = pyro_param(
+    base_pre_rate = param(
         "base_pre_rate",
         0.2 * torch.ones(n_cell_types, n_genes, device=device),
         constraint=constraints.positive,
     )
-    base_pre_disp = pyro_param(
+    base_pre_disp = param(
         "base_pre_disp",
         torch.ones(n_cell_types, n_genes, device=device),
         constraint=constraints.positive,
@@ -88,18 +87,18 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         obs=batch.pre_counts,
     )
 
-    gene_shift = pyro_param(
+    gene_shift = param(
         "gene_shift",
         0.05 * torch.randn(config.latent_dim, n_cell_types, n_genes, device=device),
     )
     latent_shift = torch.einsum("pl,lcg->pcg", latent_z, gene_shift)
-    delta_bias = pyro_param(
+    delta_bias = param(
         "delta_bias",
         torch.zeros(n_cell_types, n_genes, device=device),
     )
     on_rate = torch.nn.functional.softplus(base_pre_rate + latent_shift + delta_bias)
     on_rate = pi_t.unsqueeze(-1) * on_rate
-    on_disp = pyro_param(
+    on_disp = param(
         "on_disp",
         torch.ones(n_cell_types, n_genes, device=device),
         constraint=constraints.positive,
@@ -112,18 +111,18 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         obs=batch.on_counts,
     )
 
-    response_weights = pyro_param(
+    response_weights = param(
         "response_weights",
         torch.randn(n_genes, device=device),
     )
-    subtype_effect = pyro_param(
+    subtype_effect = param(
         "response_subtype",
         torch.zeros(config.n_subtypes, device=device),
     )[subtype]
     latent_effect = torch.sum(latent_u, dim=-1)
     qt_summary = (qt_stats * response_weights).sum(-1)
     response_loc = qt_summary + subtype_effect + latent_effect
-    response_scale = pyro_param(
+    response_scale = param(
         "response_scale",
         torch.tensor(0.5, device=device),
         constraint=constraints.positive,

@@ -6,9 +6,9 @@ import numpy as np
 import torch
 
 from hbrace.config import ModelConfig
-from hbrace.data.types import PatientBatch, SimulatedData
-from hbrace.data.types import SimConfig
-from hbrace.data.utils import clr, inv_clr, sample_nb, collapse_cells
+from hbrace.patient_data.types import PatientBatch, SimulatedData
+from hbrace.patient_data.types import SimConfig
+from hbrace.patient_data.utils import clr, inv_clr, sample_nb, collapse_cells
 
 
 class SimulatedDataGenerator:
