@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
+import json
 
 import numpy as np
 import torch
@@ -189,6 +191,9 @@ class SimulatedDataGenerator:
         self,
         device: torch.device | str = "cpu",
         return_simulation: bool = False,
+        save: bool = False,
+        out_dir: str | Path = "./data",
+        name: str | None = None,
     ) -> PatientBatch | Tuple[PatientBatch, SimulatedData]:
         """
         Generate and immediately convert to a PatientBatch.
@@ -196,6 +201,9 @@ class SimulatedDataGenerator:
         Args:
             device: Device to move tensors to.
             return_simulation: Whether to return the full SimulatedData object.
+            save: If True, persist generated arrays to disk (uncompressed .npy).
+            out_dir: Directory to place saved files (created if missing).
+            name: Optional stem for saved files (defaults to "sim_data").
 
         Returns:
             A PatientBatch object on the specified device. If return_simulation is True,
@@ -203,7 +211,58 @@ class SimulatedDataGenerator:
         """
 
         sim_data = self.generate()
+        if save:
+            self._save(sim_data, out_dir=Path(out_dir), name=name)
         batch = sim_data.to_patient_batch(device=device)
         if return_simulation:
             return batch, sim_data
         return batch
+
+    @staticmethod
+    def _save(sim_data: SimulatedData, out_dir: Path, name: str | None = None) -> None:
+        """Persist key arrays and config to disk using plain .npy and .json."""
+
+        stem = name or "sim_data"
+        (out_dir / stem).mkdir(parents=True, exist_ok=True)
+        np.save(out_dir / stem / f"{stem}_pre_counts.npy", sim_data.pre_counts)
+        np.save(out_dir / stem / f"{stem}_on_counts.npy", sim_data.on_counts)
+        np.save(out_dir / stem / f"{stem}_responses.npy", sim_data.responses)
+        np.save(out_dir / stem / f"{stem}_subtype_ids.npy", sim_data.subtype_ids)
+        np.save(out_dir / stem / f"{stem}_pi_p.npy", sim_data.pi_p)
+        np.save(out_dir / stem / f"{stem}_pi_t.npy", sim_data.pi_t)
+
+        cfg = sim_data.config.__dict__
+        (out_dir / stem / f"{stem}_config.json").write_text(json.dumps(cfg, indent=2))
+
+    @staticmethod
+    def load(path_stem: str | Path) -> SimulatedData:
+        """
+        Rehydrate a SimulatedData object from saved .npy/.json files.
+
+        Args:
+            path_stem: Base path without the suffix (e.g., './data/sim_data').
+                       The loader will look for '<stem>_*.npy' and '<stem>_config.json'.
+        """
+
+        stem = Path(path_stem)
+        cfg_path = stem / f"{stem.name}_config.json"
+        config_dict = json.loads(cfg_path.read_text())
+        sim_config = SimConfig(**config_dict)
+
+        pre_counts = np.load(stem / f"{stem.name}_pre_counts.npy")
+        on_counts = np.load(stem / f"{stem.name}_on_counts.npy")
+        responses = np.load(stem / f"{stem.name}_responses.npy")
+        subtype_ids = np.load(stem / f"{stem.name}_subtype_ids.npy")
+        pi_p = np.load(stem / f"{stem.name}_pi_p.npy")
+        pi_t = np.load(stem / f"{stem.name}_pi_t.npy")
+
+        return SimulatedData(
+            config=sim_config,
+            pre_counts=pre_counts,
+            on_counts=on_counts,
+            responses=responses,
+            subtype_ids=subtype_ids,
+            pi_p=pi_p,
+            pi_t=pi_t,
+            latents={},
+        )
