@@ -55,7 +55,7 @@ def sample_nb(mu: np.ndarray, phi: np.ndarray, rng: np.random.Generator) -> np.n
 def collapse_cells(
     cells: List[np.ndarray], cell_types: List[np.ndarray], n_cell_types: int
 ) -> np.ndarray:
-    """Sum cell-level gene counts into patient x cell-type x gene tensors."""
+    """Average cell-level gene counts into patient x cell-type x gene tensors."""
 
     n_patients = len(cells)
     n_genes = cells[0].shape[1]

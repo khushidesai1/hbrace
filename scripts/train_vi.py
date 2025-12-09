@@ -6,7 +6,7 @@ import argparse
 import torch
 
 from hbrace.config import load_config
-from hbrace.data import sample_synthetic_batch
+from hbrace.data.synthetic_data import SimulatedDataGenerator
 from hbrace.training import run_vi
 
 
@@ -38,7 +38,12 @@ def main() -> None:
     config = load_config(args.config)
     torch.manual_seed(config.vi.seed)
     device = torch.device(args.device)
-    batch = sample_synthetic_batch(config.model, args.num_patients, device=device).to(device)
+    generator = SimulatedDataGenerator.from_model_config(
+        model_config=config.model,
+        n_patients=args.num_patients,
+        seed=config.vi.seed,
+    )
+    batch, _ = generator.generate_batch(device=device, return_simulation=True)
     run_vi(batch, config)
 
 
