@@ -7,7 +7,7 @@ from pyro.nn import pyro_param
 from torch.distributions import constraints
 
 from hbrace.config import ModelConfig
-from hbrace.data import PatientBatch
+from hbrace.patient_data import PatientBatch
 from hbrace.utils import nb_logits
 
 

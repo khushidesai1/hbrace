@@ -7,7 +7,7 @@ from pyro.infer import SVI, Trace_ELBO
 from pyro.optim import ClippedAdam
 
 from hbrace.config import ExperimentConfig
-from hbrace.data import PatientBatch
+from hbrace.patient_data import PatientBatch
 from hbrace.guides import build_guide
 from .hierarchical import hierarchical_model
 

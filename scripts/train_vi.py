@@ -2,7 +2,7 @@
 import torch
 
 from hbrace.config import load_config
-from hbrace.data import sample_synthetic_batch
+from hbrace.patient_data import sample_synthetic_batch
 from hbrace.models import HBRACEModel
 
 # %% Load configuration with config path
