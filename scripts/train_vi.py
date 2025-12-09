@@ -1,52 +1,25 @@
-#!/usr/bin/env python3
-"""Entry point for testing the VI skeleton with synthetic data."""
-from __future__ import annotations
-
-import argparse
+# %% Import necessary libraries
 import torch
 
 from hbrace.config import load_config
 from hbrace.data import sample_synthetic_batch
 from hbrace.models import HBRACEModel
 
+# %% Load configuration with config path
+config_path = "configs/experiment.yaml"
+num_patients = 8
+device = "cpu"
+seed = 42
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="configs/experiment.yaml",
-        help="Path to the YAML config file.",
-    )
-    parser.add_argument(
-        "--num-patients",
-        type=int,
-        default=8,
-        help="Number of synthetic patients to simulate for the dry-run.",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cpu",
-        help="Torch device to place tensors on.",
-    )
-    return parser.parse_args()
+config = load_config(config_path)
+torch.manual_seed(seed)
+batch = sample_synthetic_batch(
+    model_config=config.model,
+    n_patients=num_patients,
+    device=device,
+    seed=seed,
+)
 
-
-def main() -> None:
-    args = parse_args()
-    config = load_config(args.config)
-    torch.manual_seed(config.vi.seed)
-    device = torch.device(args.device)
-    batch = sample_synthetic_batch(
-        model_config=config.model,
-        n_patients=args.num_patients,
-        device=device,
-        seed=config.vi.seed,
-    )
-    model = HBRACEModel(config)
-    model.train(batch, seed=config.vi.seed)
-
-
-if __name__ == "__main__":
-    main()
+# %% Initialize and train the model
+model = HBRACEModel(config)
+model.train(batch, seed=seed)
