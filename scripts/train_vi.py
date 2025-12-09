@@ -6,7 +6,7 @@ import argparse
 import torch
 
 from hbrace.config import load_config
-from hbrace.data.synthetic import sample_synthetic_batch
+from hbrace.data import sample_synthetic_batch
 from hbrace.training import run_vi
 
 
