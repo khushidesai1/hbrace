@@ -15,7 +15,6 @@ class ModelConfig:
     n_genes: int
     z_dim: int = 4  # dimension for latent z_i treatment effect
     u_dim: int = 5  # dimension for latent u_i confounder
-    delta_dim: int = 4  # dimension for simplex shift δ controlling interventions
     subtype_concentration: float = 2.0  # Gamma(shape, rate) ~ (2, 0.1) in proposal
     subtype_rate: float = 0.1
     nb_dispersion_prior: float = 2.0

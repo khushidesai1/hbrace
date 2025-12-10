@@ -41,7 +41,6 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     G = config.n_genes
     d_z = config.z_dim
     r_u = config.u_dim
-    delta_dim = config.delta_dim
 
     # Mixing weights for pre-treatment cell distributions.
     theta = param(
@@ -93,3 +92,37 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             Independent(base_nb_batch, 1),
         ),
     )
+
+    # Mean and dispersion shifts for on-treatment distributions.
+    Delta_std = sample(
+        "Delta_std",
+        HalfNormal(torch.full((C, G, d_z), 0.5, device=device)).to_event(3),
+    )
+    Delta = sample(
+        "Delta",
+        Normal(torch.zeros((C, G, d_z), device=device), Delta_std).to_event(3),
+    )
+    z = sample(
+        "z",
+        Normal(
+            torch.zeros((n_patients, d_z), device=device),
+            torch.ones((n_patients, d_z), device=device),
+        ).to_event(2),
+    )
+    log_mu_t = deterministic(
+        "log_mu_t",
+        log_mu_p[None, :, :] + torch.einsum("id,cgd->icg", z, Delta),
+    )
+    mu_t = deterministic("mu_t", torch.exp(log_mu_t))
+    delta_std = sample(
+        "delta_std",
+        HalfNormal(torch.full((C,), 0.5, device=device)).to_event(1),
+    )
+    delta = sample(
+        "delta",
+        Normal(
+            torch.zeros((n_patients, C), device=device),
+            delta_std.expand(n_patients, C),
+        ).to_event(2),
+    )
+    phi_t = deterministic("phi_t", phi_p[None, :] * torch.exp(delta))
