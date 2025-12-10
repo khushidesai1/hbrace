@@ -48,6 +48,8 @@ class SimConfig:
     n_subtypes: int = 3
     n_cell_types: int = 5
     n_genes: int = 100
+    min_cells: int = 500
+    max_cells: int = 1000
     d_z: int = 3  # dim of treatment effect z_i
     r_u: int = 2  # dim of confounder u_i
     sigma_D: float = 0.5  # std for Delta_cg
@@ -70,8 +72,6 @@ class SimulatedData:
     transition_prior: np.ndarray  # (C, C)
     pre_cell_types: Optional[List[np.ndarray]] = None
     post_cell_types: Optional[List[np.ndarray]] = None
-    min_cells: int = 500
-    max_cells: int = 1000
     extra_params: Optional[Dict[str, Any]] = None
 
     def to_patient_batch(self, device: torch.device | str = "cpu") -> PatientBatch:

@@ -50,12 +50,13 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     )
     tau_i_p = sample(
         "tau_i_p",
-        Gamma(torch.full((n_patients, 1), 2, device=device), torch.full((n_patients, 1), 0.1, device=device)).to_event(1),
+        Gamma(2.0, 0.1).to_event(1)
     )
+    tau_i_p_batch = tau_i_p.unsqueeze(0).expand(n_patients, -1)
     theta_expanded = theta[batch.subtype_ids]
     pi_p = sample(
         "pi_p",
-        Dirichlet(tau_i_p * theta_expanded).to_event(1),
+        Dirichlet(tau_i_p_batch * theta_expanded.clamp_min(1e-6)).to_event(1),
     )
 
     # Pre-treatment NB distribution.
@@ -136,7 +137,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     # Cell-type proportion shifts for on-treatment mixture weights.
     W_std = sample(
         "W_std",
-        HalfNormal(torch.tensor(config.z_dim, device=device)).expand([C, d_z]).to_event(2),
+        HalfNormal(torch.full((C, d_z), 0.5, device=device)).to_event(2),
     )
     W = sample(
         "W",

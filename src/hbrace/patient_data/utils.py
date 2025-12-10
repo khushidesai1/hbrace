@@ -88,7 +88,8 @@ def compute_cell_type_proportions(
     n_subtypes = int(subtype_ids_np.max()) + 1
 
     if cell_type_lists is not None:
-        n_cell_types = cell_type_lists[0].max() + 1
+        # Derive number of cell types from the global max across patients.
+        n_cell_types = max(int(ct.max()) for ct in cell_type_lists) + 1
         n_patients = len(cell_type_lists)
 
         patient_cell_type_proportions = np.zeros((n_patients, n_cell_types), dtype=np.float32)
