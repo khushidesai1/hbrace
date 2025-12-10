@@ -7,7 +7,7 @@ import pyro
 from pyro.infer import SVI, Trace_ELBO
 from pyro.optim import ClippedAdam
 
-from hbrace.config import ExperimentConfig
+from hbrace.config import ModelConfig, VIConfig
 from hbrace.guides import build_guide
 from hbrace.patient_data import PatientBatch
 from .hierarchical import hierarchical_model
@@ -21,15 +21,17 @@ except Exception:  # pragma: no cover - fallback if tqdm is missing
 class HBRACEModel:
     """HBRACE model wrapper around the hierarchical Pyro model."""
 
-    def __init__(self, config: ExperimentConfig) -> None:
+    def __init__(self, model_config: ModelConfig, vi_config: VIConfig) -> None:
         """
         Initialize the HBRACEModel.
 
         Args:
-            config: The ExperimentConfig to use for the model.
+            model_config: The ModelConfig to use for the model.
+            vi_config: The VIConfig to use for the model.
         """
-        self.config = config
-        self.model_fn = functools.partial(hierarchical_model, config=config.model)
+        self.model_config = model_config
+        self.vi_config = vi_config
+        self.model_fn = functools.partial(hierarchical_model, config=model_config)
 
     def train(
         self,
@@ -55,16 +57,16 @@ class HBRACEModel:
         """
 
         pyro.clear_param_store()
-        pyro.set_rng_seed(seed if seed is not None else self.config.vi.seed)
+        pyro.set_rng_seed(seed if seed is not None else self.vi_config.seed)
 
-        guide_name = guide if guide is not None else self.config.vi.guide
-        guide_fn = build_guide(self.model_fn, self.config.model, guide_name)
-        lr = learning_rate if learning_rate is not None else self.config.vi.learning_rate
+        guide_name = guide if guide is not None else self.vi_config.guide
+        guide_fn = build_guide(self.model_fn, self.model_config, guide_name)
+        lr = learning_rate if learning_rate is not None else self.vi_config.learning_rate
         optimizer = ClippedAdam({"lr": lr})
         svi = SVI(self.model_fn, guide_fn, optimizer, loss=Trace_ELBO())
 
-        steps = num_steps if num_steps is not None else self.config.vi.num_steps
-        interval = self.config.vi.log_interval if log_interval is None else log_interval
+        steps = num_steps if num_steps is not None else self.vi_config.num_steps
+        interval = self.vi_config.log_interval if log_interval is None else log_interval
 
         use_tqdm = progress and trange is not None
         iterator = trange(steps) if use_tqdm else range(steps)

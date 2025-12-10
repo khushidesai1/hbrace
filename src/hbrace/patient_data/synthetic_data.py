@@ -45,8 +45,8 @@ class SimulatedDataGenerator:
             n_subtypes=model_config.n_subtypes,
             n_cell_types=model_config.n_cell_types,
             n_genes=model_config.n_genes,
-            d_z=model_config.latent_dim,
-            r_u=model_config.latent_dim,
+            d_z=model_config.z_dim,
+            r_u=model_config.u_dim,
             seed=seed if seed is not None else SimConfig.seed,
         )
         return cls(sim_config)
@@ -123,15 +123,17 @@ class SimulatedDataGenerator:
         post_cells: List[np.ndarray] = []
         post_cell_types: List[np.ndarray] = []
         for i in range(N):
-            ct_pre = rng.choice(C, size=self.sim_config.m_pre, p=pi_p[i])
-            X_pre = np.zeros((self.sim_config.m_pre, G), dtype=np.int64)
+            m_i = rng.integers(low=self.sim_config.min_cells, high=self.sim_config.max_cells)
+            n_i = rng.integers(low=self.sim_config.min_cells, high=self.sim_config.max_cells)
+            ct_pre = rng.choice(C, size=m_i, p=pi_p[i])
+            X_pre = np.zeros((m_i, G), dtype=np.int64)
             for j, c_idx in enumerate(ct_pre):
                 X_pre[j] = sample_nb(mu_p[c_idx], np.repeat(phi_p[c_idx], G), rng)
             pre_cells.append(X_pre)
             pre_cell_types.append(ct_pre)
 
-            ct_post = rng.choice(C, size=self.sim_config.n_post, p=pi_t[i])
-            X_post = np.zeros((self.sim_config.n_post, G), dtype=np.int64)
+            ct_post = rng.choice(C, size=n_i, p=pi_t[i])
+            X_post = np.zeros((n_i, G), dtype=np.int64)
             for k, c_idx in enumerate(ct_post):
                 X_post[k] = sample_nb(mu_t[i, c_idx], np.repeat(phi_t[i, c_idx], G), rng)
             post_cells.append(X_post)
@@ -154,7 +156,7 @@ class SimulatedDataGenerator:
         prob = 1.0 / (1.0 + np.exp(-linear))
         responses = rng.binomial(1, prob, size=N)
 
-        latents: Dict[str, Any] = {
+        extra_params: Dict[str, Any] = {
             "z": z,
             "u": u,
             "mu_p": mu_p,
@@ -183,7 +185,7 @@ class SimulatedDataGenerator:
             subtype_ids=subtype_ids,
             pi_p=pi_p,
             pi_t=pi_t,
-            latents=latents,
+            extra_params=extra_params,
         )
 
 

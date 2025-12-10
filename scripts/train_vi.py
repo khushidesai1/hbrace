@@ -13,10 +13,10 @@ num_patients = 8
 device = "cpu"
 seed = 42
 
-config = load_config(config_path)
+model_config, vi_config = load_config(config_path)
 torch.manual_seed(seed)
 generator = SimulatedDataGenerator.from_model_config(
-    model_config=config.model,
+    model_config=model_config,
     n_patients=num_patients,
     seed=seed,
 )
@@ -34,5 +34,5 @@ else:
     batch = sim_data.to_patient_batch(device=device)
 
 # %% Initialize and train the model
-model = HBRACEModel(config)
+model = HBRACEModel(model_config, vi_config)
 model.train(batch, seed=seed)

@@ -67,3 +67,35 @@ def collapse_cells(
                 continue
             aggregated[idx, c] = counts[mask].mean(axis=0)
     return aggregated
+
+def compute_cell_type_proportions(cell_type_lists: List[np.ndarray], subtype_ids: np.ndarray) -> np.ndarray:
+    """
+    Compute the average cell type proportions across patients for each subtype.
+    
+    Args:
+        cell_type_lists: List of cell types for each patient.
+        subtype_ids: Subtype ids for each patient.
+
+    Returns:
+        Average cell type proportions across patients for each subtype.
+    """
+    n_subtypes = subtype_ids.max() + 1
+    n_cell_types = cell_type_lists[0].max() + 1
+    n_patients = len(cell_type_lists)
+    
+    # Sum over patient proportions for each cell type
+    patient_cell_type_proportions = np.zeros((n_patients, n_cell_types), dtype=np.float32)
+    for i, cell_types in enumerate(cell_type_lists):
+        counts = np.bincount(cell_types, minlength=n_cell_types)
+        patient_cell_type_proportions[i] = counts / counts.sum()
+    
+    # Average over patients for each subtype
+    subtype_cell_type_proportions = np.zeros((n_subtypes, n_cell_types), dtype=np.float32)
+    for subtype in range(n_subtypes):
+        patient_idxs = subtype_ids == subtype
+        subtype_cell_type_proportions[subtype] = patient_cell_type_proportions[patient_idxs].mean(axis=0)
+
+    return subtype_cell_type_proportions
+    
+
+    

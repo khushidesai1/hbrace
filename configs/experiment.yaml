@@ -3,6 +3,7 @@ model:
   n_cell_types: 5
   n_genes: 50
   latent_dim: 6
+  u_dim: 5
   delta_dim: 4
   subtype_concentration: 2.0
   subtype_rate: 0.1
