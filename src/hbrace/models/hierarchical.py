@@ -126,3 +126,19 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         ).to_event(2),
     )
     phi_t = deterministic("phi_t", phi_p[None, :] * torch.exp(delta))
+
+    # Cell-type proportion shifts for on-treatment mixture weights.
+    W_std = sample(
+        "W_std",
+        HalfNormal()
+    )
+    W = sample(
+
+    )
+    epsilon_std = sample(
+
+    )
+    epsilon = sample(
+
+    )
+    

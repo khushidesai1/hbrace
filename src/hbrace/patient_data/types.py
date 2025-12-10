@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -18,6 +18,7 @@ class PatientBatch:
     cell_type_proportions: torch.Tensor # shape (N, C)
     responses: torch.Tensor  # shape (N,)
     subtype_ids: torch.Tensor  # shape (N,)
+    transition_prior: torch.Tensor  # shape (C, C)
 
     def to(self, device: torch.device | str) -> "PatientBatch":
         """Move all tensors to a specific device.
@@ -36,6 +37,7 @@ class PatientBatch:
             cell_type_proportions=self.cell_type_proportions.to(device),
             responses=self.responses.to(device),
             subtype_ids=self.subtype_ids.to(device),
+            transition_prior=self.transition_prior.to(device),
         )
 
 
@@ -65,9 +67,12 @@ class SimulatedData:
     subtype_ids: np.ndarray  # (N,)
     pi_p: np.ndarray  # (N, C)
     pi_t: np.ndarray  # (N, C)
+    transition_prior: np.ndarray  # (C, C)
+    pre_cell_types: Optional[List[np.ndarray]] = None
+    post_cell_types: Optional[List[np.ndarray]] = None
     min_cells: int = 500
     max_cells: int = 1000
-    extra_params: Dict[str, Any]
+    extra_params: Optional[Dict[str, Any]] = None
 
     def to_patient_batch(self, device: torch.device | str = "cpu") -> PatientBatch:
         """
@@ -82,7 +87,11 @@ class SimulatedData:
 
         device = torch.device(device)
 
-        cell_type_proportions = compute_cell_type_proportions(self.pre_cell_types, self.subtype_ids)
+        cell_type_proportions = compute_cell_type_proportions(
+            self.pre_cell_types,
+            self.subtype_ids,
+            self.pi_p,
+        )
 
         return PatientBatch(
             pre_counts=torch.as_tensor(self.pre_counts, dtype=torch.float32, device=device),
@@ -90,4 +99,5 @@ class SimulatedData:
             cell_type_proportions=torch.as_tensor(cell_type_proportions, dtype=torch.float32, device=device),
             responses=torch.as_tensor(self.responses, dtype=torch.float32, device=device),
             subtype_ids=torch.as_tensor(self.subtype_ids, dtype=torch.long, device=device),
+            transition_prior=torch.as_tensor(self.transition_prior, dtype=torch.float32, device=device),
         )
