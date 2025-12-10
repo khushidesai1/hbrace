@@ -12,7 +12,7 @@ from pyro.distributions import (
     NegativeBinomial,
     Normal,
 )
-from torch.distributions import Independent, MixtureSameFamily, constraints
+from torch.distributions import constraints
 
 from hbrace.config import ModelConfig
 from hbrace.patient_data import PatientBatch
@@ -48,56 +48,15 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         batch.cell_type_proportions,
         constraint=constraints.simplex,
     )
-    tau_i_p = sample(
-        "tau_i_p",
-        Gamma(2.0, 0.1).to_event(1)
-    )
-    tau_i_p_batch = tau_i_p.unsqueeze(0).expand(n_patients, -1)
     theta_expanded = theta[batch.subtype_ids]
-    pi_p = sample(
-        "pi_p",
-        Dirichlet(tau_i_p_batch * theta_expanded.clamp_min(1e-6)).to_event(1),
-    )
 
-    # Pre-treatment NB distribution.
-    log_mu_p = sample(
-        "log_mu_p",
-        Normal(
-            torch.full((C, G), 1.5, device=device),
-            torch.full((C, G), 0.8, device=device),
-        ).to_event(2),
-    )
-    phi_p = sample(
-        "phi_p",
+    # Pre-treatment NB dispersion prior (cell-type level).
+    phi_p_std = sample(
+        "phi_p_std",
         Gamma(
             torch.full((C,), config.nb_dispersion_prior, device=device),
             torch.full((C,), config.nb_dispersion_rate, device=device),
         ).to_event(1),
-    )
-    mu_p = torch.exp(log_mu_p)
-    
-    mu_p_batch  = mu_p.unsqueeze(0).expand(n_patients, -1, -1)
-    phi_p_batch = phi_p.view(1, C, 1).expand(n_patients, -1, G)
-    logits_p = nb_logits(mu_p_batch, phi_p_batch)
-
-    f_p = sample(
-        "f_p",
-        NegativeBinomial(
-            total_count=phi_p_batch,
-            logits=logits_p,
-        ).to_event(1),
-        obs=batch.pre_counts,
-    )
-    
-    q_p = MixtureSameFamily(
-        Categorical(pi_p),
-        Independent(
-            NegativeBinomial(
-                total_count=phi_p_batch,
-                logits=logits_p,
-            ),
-            1,
-        ),
     )
 
     # Mean and dispersion shifts for on-treatment distributions.
@@ -105,34 +64,11 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "Delta_std",
         HalfNormal(torch.full((C, G, d_z), 0.5, device=device)).to_event(3),
     )
-    Delta = sample(
-        "Delta",
-        Normal(torch.zeros((C, G, d_z), device=device), Delta_std).to_event(3),
-    )
-    z = sample(
-        "z",
-        Normal(
-            torch.zeros((n_patients, d_z), device=device),
-            torch.ones((n_patients, d_z), device=device),
-        ).to_event(2),
-    )
-    log_mu_t = deterministic(
-        "log_mu_t",
-        log_mu_p[None, :, :] + torch.einsum("id,cgd->icg", z, Delta),
-    )
-    mu_t = deterministic("mu_t", torch.exp(log_mu_t))
+    Delta = sample("Delta", Normal(torch.zeros((C, G, d_z), device=device), Delta_std).to_event(3))
     delta_std = sample(
         "delta_std",
         HalfNormal(torch.full((C,), 0.5, device=device)).to_event(1),
     )
-    delta = sample(
-        "delta",
-        Normal(
-            torch.zeros((n_patients, C), device=device),
-            delta_std.expand(n_patients, C),
-        ).to_event(2),
-    )
-    phi_t = deterministic("phi_t", phi_p[None, :] * torch.exp(delta))
 
     # Cell-type proportion shifts for on-treatment mixture weights.
     W_std = sample(
@@ -147,13 +83,6 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "epsilon_std",
         HalfNormal(torch.full((C,), 0.1, device=device)).to_event(1),
     )
-    epsilon = sample(
-        "epsilon",
-        Normal(
-            torch.zeros((n_patients, C), device=device),
-            epsilon_std.expand(n_patients, C),
-        ).to_event(2),
-    )
 
     lambda_h = sample("lambda_h", HalfNormal(torch.tensor(0.2, device=device)))
     lambda_l = sample("lambda_l", HalfNormal(torch.tensor(0.05, device=device)))
@@ -164,45 +93,6 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     )
     T = T - torch.diag(torch.diag(T))  # zero diagonal transitions
 
-    eta_p = _clr(pi_p)
-    eta_t = deterministic(
-        "eta_t",
-        eta_p + (z @ W.t()) @ T.T + epsilon,
-    )
-    pi_t = deterministic("pi_t", _inv_clr(eta_t))
-
-    # On-treatment NB distribution and mixture.
-    phi_t_batch = phi_t.unsqueeze(-1).expand(n_patients, C, G)
-    logits_t = nb_logits(mu_t, phi_t_batch)
-
-    f_t = sample(
-        "f_t",
-        NegativeBinomial(
-            total_count=phi_t_batch,
-            logits=logits_t,
-        ).to_event(1),
-        obs=batch.on_counts,
-    )
-
-    q_t = MixtureSameFamily(
-        Categorical(pi_t),
-        Independent(
-            NegativeBinomial(
-                total_count=phi_t_batch,
-                logits=logits_t,
-            ),
-            1,
-        ),
-    )
-
-    # Confounder and outcome.
-    u = sample(
-        "u",
-        Normal(
-            torch.zeros((n_patients, r_u), device=device),
-            torch.ones((n_patients, r_u), device=device),
-        ).to_event(2),
-    )
     beta0 = sample(
         "beta0",
         Normal(torch.tensor(0.0, device=device), torch.tensor(0.5, device=device)),
@@ -219,15 +109,93 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "beta_s",
         Normal(torch.zeros((config.n_subtypes,), device=device), torch.full((config.n_subtypes,), 0.5, device=device)).to_event(1),
     )
-    logit_y = deterministic(
-        "logit_y",
-        beta0
-        + (pi_t * beta_t).sum(dim=-1)
-        + (u * gamma).sum(dim=-1)
-        + beta_s[batch.subtype_ids],
-    )
-    sample(
-        "y",
-        Bernoulli(logits=logit_y).to_event(1),
-        obs=batch.responses,
-    )
+
+    # Patient-level plate.
+    with plate("patients", n_patients):
+        tau_i_p = sample(
+            "tau_i_p",
+            Gamma(torch.tensor(2.0, device=device), torch.tensor(0.1, device=device)),
+        )
+        pi_p = sample(
+            "pi_p",
+            Dirichlet(tau_i_p.unsqueeze(-1) * theta_expanded.clamp_min(1e-6)),
+        )
+
+        log_mu_p = sample(
+            "log_mu_p",
+            Normal(
+                torch.full((C, G), 1.5, device=device),
+                torch.full((C, G), 0.8, device=device),
+            ).to_event(2),
+        )
+        mu_p = torch.exp(log_mu_p)
+
+        phi_p = sample(
+            "phi_p",
+            Gamma(
+                phi_p_std,
+                torch.ones_like(phi_p_std),
+            ).to_event(1),
+        )
+
+        phi_p_exp = phi_p.unsqueeze(-1).expand(n_patients, C, G)
+        logits_p = nb_logits(mu_p, phi_p_exp)
+        f_p = sample(
+            "f_p",
+            NegativeBinomial(
+                total_count=phi_p_exp,
+                logits=logits_p,
+            ).to_event(2),
+            obs=batch.pre_counts,
+        )
+
+        z = sample(
+            "z",
+            Normal(torch.zeros(d_z, device=device), torch.ones(d_z, device=device)).to_event(1),
+        )
+
+        log_mu_t_i = log_mu_p + torch.einsum("nd,cgd->ncg", z, Delta)
+        mu_t_i = deterministic("mu_t", torch.exp(log_mu_t_i))
+
+        delta = sample(
+            "delta",
+            Normal(torch.zeros(C, device=device), delta_std).to_event(1),
+        )
+        phi_t_i = deterministic("phi_t", phi_p * torch.exp(delta))
+
+        epsilon = sample(
+            "epsilon",
+            Normal(torch.zeros(C, device=device), epsilon_std).to_event(1),
+        )
+
+        eta_p = _clr(pi_p)
+        eta_t = deterministic("eta_t", eta_p + (z @ W.t()) @ T.T + epsilon)
+        pi_t = deterministic("pi_t", _inv_clr(eta_t))
+
+        phi_t_exp = phi_t_i.unsqueeze(-1).expand(n_patients, C, G)
+        logits_t = nb_logits(mu_t_i, phi_t_exp)
+        f_t = sample(
+            "f_t",
+            NegativeBinomial(
+                total_count=phi_t_exp,
+                logits=logits_t,
+            ).to_event(2),
+            obs=batch.on_counts,
+        )
+
+        u = sample(
+            "u",
+            Normal(torch.zeros(r_u, device=device), torch.ones(r_u, device=device)).to_event(1),
+        )
+        logit_y = deterministic(
+            "logit_y",
+            beta0
+            + (pi_t * beta_t).sum(dim=-1)
+            + (u * gamma).sum(dim=-1)
+            + beta_s[batch.subtype_ids],
+        )
+        sample(
+            "y",
+            Bernoulli(logits=logit_y),
+            obs=batch.responses,
+        )
