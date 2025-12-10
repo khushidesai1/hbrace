@@ -74,22 +74,28 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         ).to_event(1),
     )
     mu_p = torch.exp(log_mu_p)
-    logits_p = nb_logits(mu_p, phi_p[:, None])
-    base_nb = NegativeBinomial(
-        total_count=phi_p[:, None],
-        logits=logits_p,
-    )
-    base_nb_batch = base_nb.expand((n_patients, C, G))
+    
+    mu_p_batch  = mu_p.unsqueeze(0).expand(n_patients, -1, -1)
+    phi_p_batch = phi_p.view(1, C, 1).expand(n_patients, -1, G)
+    logits_p = nb_logits(mu_p_batch, phi_p_batch)
+
     f_p = sample(
         "f_p",
-        base_nb_batch.to_event(3),
+        NegativeBinomial(
+            total_count=phi_p_batch,
+            logits=logits_p,
+        ).to_event(1),
         obs=batch.pre_counts,
     )
-    q_p = sample(
-        "q_p",
-        MixtureSameFamily(
-            Categorical(pi_p),
-            Independent(base_nb_batch, 1),
+    
+    q_p = MixtureSameFamily(
+        Categorical(pi_p),
+        Independent(
+            NegativeBinomial(
+                total_count=phi_p_batch,
+                logits=logits_p,
+            ),
+            1,
         ),
     )
 
@@ -130,15 +136,83 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     # Cell-type proportion shifts for on-treatment mixture weights.
     W_std = sample(
         "W_std",
-        HalfNormal()
+        HalfNormal(torch.tensor(config.z_dim, device=device)).expand([C, d_z]).to_event(2),
     )
     W = sample(
-
+        "W",
+        Normal(torch.zeros((C, d_z), device=device), W_std).to_event(2),
     )
     epsilon_std = sample(
-
+        "epsilon_std",
+        HalfNormal(torch.full((C,), 0.1, device=device)).to_event(1),
     )
     epsilon = sample(
+        "epsilon",
+        Normal(
+            torch.zeros((n_patients, C), device=device),
+            epsilon_std.expand(n_patients, C),
+        ).to_event(2),
+    )
+
+    lambda_h = sample("lambda_h", HalfNormal(torch.tensor(0.2, device=device)))
+    lambda_l = sample("lambda_l", HalfNormal(torch.tensor(0.05, device=device)))
+    scale_T = torch.where(batch.transition_prior > 0, lambda_l, lambda_h)
+    T = sample(
+        "T",
+        Laplace(torch.zeros((C, C), device=device), scale_T).to_event(2),
+    )
+    T = T - torch.diag(torch.diag(T))  # zero diagonal transitions
+
+    eta_p = _clr(pi_p)
+    eta_t = deterministic(
+        "eta_t",
+        eta_p + (z @ W.t()) @ T.T + epsilon,
+    )
+    pi_t = deterministic("pi_t", _inv_clr(eta_t))
+
+    # On-treatment NB distribution and mixture.
+    phi_t_batch = phi_t.unsqueeze(-1).expand(n_patients, C, G)
+    logits_t = nb_logits(mu_t, phi_t_batch)
+
+    f_t = sample(
+        "f_t",
+        NegativeBinomial(
+            total_count=phi_t_batch,
+            logits=logits_t,
+        ).to_event(1),
+        obs=batch.on_counts,
+    )
+
+    q_t = MixtureSameFamily(
+        Categorical(pi_t),
+        Independent(
+            NegativeBinomial(
+                total_count=phi_t_batch,
+                logits=logits_t,
+            ),
+            1,
+        ),
+    )
+
+    # Confounder variable and patient repsonse.
+    u = sample(
 
     )
-    
+    beta_0 = sample(
+
+    )
+    beta_t = sample(
+
+    )
+    gamma_u = sample(
+
+    )
+    beta_s = sample(
+
+    )
+    y_prob = deterministic(
+
+    )
+    y = sample(
+        
+    )
