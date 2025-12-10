@@ -194,25 +194,39 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         ),
     )
 
-    # Confounder variable and patient repsonse.
+    # Confounder and outcome.
     u = sample(
-
+        "u",
+        Normal(
+            torch.zeros((n_patients, r_u), device=device),
+            torch.ones((n_patients, r_u), device=device),
+        ).to_event(2),
     )
-    beta_0 = sample(
-
+    beta0 = sample(
+        "beta0",
+        Normal(torch.tensor(0.0, device=device), torch.tensor(0.5, device=device)),
     )
     beta_t = sample(
-
+        "beta_t",
+        Normal(torch.zeros((C,), device=device), torch.full((C,), 0.5, device=device)).to_event(1),
     )
-    gamma_u = sample(
-
+    gamma = sample(
+        "gamma",
+        Normal(torch.zeros((r_u,), device=device), torch.full((r_u,), 0.5, device=device)).to_event(1),
     )
     beta_s = sample(
-
+        "beta_s",
+        Normal(torch.zeros((config.n_subtypes,), device=device), torch.full((config.n_subtypes,), 0.5, device=device)).to_event(1),
     )
-    y_prob = deterministic(
-
+    logit_y = deterministic(
+        "logit_y",
+        beta0
+        + (pi_t * beta_t).sum(dim=-1)
+        + (u * gamma).sum(dim=-1)
+        + beta_s[batch.subtype_ids],
     )
-    y = sample(
-        
+    sample(
+        "y",
+        Bernoulli(logits=logit_y).to_event(1),
+        obs=batch.responses,
     )
