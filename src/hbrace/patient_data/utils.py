@@ -72,6 +72,7 @@ def compute_cell_type_proportions(
     cell_type_lists: Optional[List[np.ndarray]],
     subtype_ids: np.ndarray,
     pi_p: Optional[np.ndarray] = None,
+    n_subtypes: Optional[int] = None,
 ) -> np.ndarray:
     """
     Compute the average cell type proportions across patients for each subtype.
@@ -80,12 +81,16 @@ def compute_cell_type_proportions(
         cell_type_lists: List of cell types for each patient.
         subtype_ids: Subtype ids for each patient.
         pi_p: Optional patient-level mixture proportions (N, C) to fall back on.
+        n_subtypes: Optional explicit number of subtypes to ensure consistent shape.
 
     Returns:
         Average cell type proportions across patients for each subtype.
     """
     subtype_ids_np = np.asarray(subtype_ids)
-    n_subtypes = int(subtype_ids_np.max()) + 1
+    if n_subtypes is None:
+        if subtype_ids_np.size == 0:
+            raise ValueError("Cannot infer n_subtypes from empty subtype_ids.")
+        n_subtypes = int(subtype_ids_np.max()) + 1
 
     if cell_type_lists is not None:
         # Derive number of cell types from the global max across patients.
@@ -100,6 +105,8 @@ def compute_cell_type_proportions(
         subtype_cell_type_proportions = np.zeros((n_subtypes, n_cell_types), dtype=np.float32)
         for subtype in range(n_subtypes):
             patient_idxs = subtype_ids_np == subtype
+            if not np.any(patient_idxs):
+                continue
             subtype_cell_type_proportions[subtype] = patient_cell_type_proportions[patient_idxs].mean(axis=0)
         return subtype_cell_type_proportions
 

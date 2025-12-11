@@ -3,8 +3,8 @@ from __future__ import annotations
 import torch
 from pyro import deterministic, param, plate, sample
 from pyro.distributions import (
+    Beta,
     Bernoulli,
-    Categorical,
     Dirichlet,
     Gamma,
     HalfNormal,
@@ -84,14 +84,14 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         HalfNormal(torch.full((C,), 0.1, device=device)).to_event(1),
     )
 
-    lambda_h = sample("lambda_h", HalfNormal(torch.tensor(0.2, device=device)))
-    lambda_l = sample("lambda_l", HalfNormal(torch.tensor(0.05, device=device)))
-    scale_T = torch.where(batch.transition_prior > 0, lambda_l, lambda_h)
+    lambda_T = sample(
+        "lambda_T",
+        Beta(torch.tensor(2.0, device=device), torch.tensor(5.0, device=device)),
+    )
     T = sample(
         "T",
-        Laplace(torch.zeros((C, C), device=device), scale_T).to_event(2),
+        Laplace(torch.zeros((C, C), device=device), lambda_T).to_event(2),
     )
-    T = T - torch.diag(torch.diag(T))  # zero diagonal transitions
 
     beta0 = sample(
         "beta0",

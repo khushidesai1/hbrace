@@ -1,15 +1,21 @@
-"""Factories for VI guides."""
 from __future__ import annotations
-
 from typing import Callable
-
 from pyro.infer.autoguide import AutoDelta, AutoLowRankMultivariateNormal, AutoNormal
-
 from hbrace.config import ModelConfig
 
 
 def build_guide(model: Callable, config: ModelConfig, strategy: str) -> Callable:
-    """Return an AutoGuide tailored to the chosen strategy."""
+    """
+    Return an AutoGuide tailored to the chosen strategy.
+
+    Args:
+        model: The model to guide.
+        config: The model configuration.
+        strategy: The guide strategy to use.
+
+    Returns:
+        An AutoGuide tailored to the chosen strategy.
+    """
 
     strategy = strategy.lower()
     if strategy == "auto_delta":

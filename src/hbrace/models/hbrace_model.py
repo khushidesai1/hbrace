@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import functools
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional
 
 import pyro
+import torch
 from pyro.infer import SVI, Trace_ELBO
 from pyro.optim import ClippedAdam
 
 from hbrace.config import ModelConfig, VIConfig
-from hbrace.guides import build_guide
 from hbrace.patient_data import PatientBatch
+from .guides import build_guide
 from .hierarchical import hierarchical_model
+from .utils import EarlyStopping
 
 try:
     from tqdm.auto import trange
@@ -32,56 +35,93 @@ class HBRACEModel:
         self.model_config = model_config
         self.vi_config = vi_config
         self.model_fn = functools.partial(hierarchical_model, config=model_config)
+        self.early_stopping = EarlyStopping(patience=float(vi_config.early_stopping_patience))
 
     def train(
         self,
-        batch: PatientBatch,
-        num_steps: Optional[int] = None,
-        learning_rate: Optional[float] = None,
-        log_interval: Optional[int] = None,
-        guide: Optional[str] = None,
-        seed: Optional[int] = None,
+        dataloader_train: Iterable[PatientBatch],
+        dataloader_val: Optional[Iterable[PatientBatch]] = None,
+        seed: int = 0,
         progress: bool = True,
     ) -> Dict[str, List[float]]:
         """
-        Run stochastic variational inference on the provided batch.
+        Run stochastic variational inference across epochs of patient batches.
 
         Args:
-            batch: PatientBatch with counts/responses/subtypes.
-            num_steps: Override for number of SVI steps.
-            learning_rate: Override for optimizer learning rate.
-            log_interval: How often to print loss (0 disables).
-            guide: Guide strategy name override.
+            dataloader_train: Iterable yielding PatientBatch objects for training.
+            dataloader_val: Iterable yielding validation PatientBatch objects.
             seed: RNG seed for reproducibility.
             progress: Whether to show a tqdm progress bar when available.
         """
-
         pyro.clear_param_store()
-        pyro.set_rng_seed(seed if seed is not None else self.vi_config.seed)
+        pyro.set_rng_seed(seed)
 
-        guide_name = guide if guide is not None else self.vi_config.guide
-        guide_fn = build_guide(self.model_fn, self.model_config, guide_name)
-        lr = learning_rate if learning_rate is not None else self.vi_config.learning_rate
-        optimizer = ClippedAdam({"lr": lr})
-        svi = SVI(self.model_fn, guide_fn, optimizer, loss=Trace_ELBO())
-
-        steps = num_steps if num_steps is not None else self.vi_config.num_steps
-        interval = self.vi_config.log_interval if log_interval is None else log_interval
+        self.guide_fn = build_guide(self.model_fn, self.model_config, self.vi_config.guide)
+        optimizer = ClippedAdam({"lr": self.vi_config.learning_rate})
+        svi = SVI(self.model_fn, self.guide_fn, optimizer, loss=Trace_ELBO())
 
         use_tqdm = progress and trange is not None
-        iterator = trange(steps) if use_tqdm else range(steps)
+        iterator = trange(self.vi_config.num_epochs) if use_tqdm else range(self.vi_config.num_epochs)
 
-        history: List[float] = []
-        for step in iterator:
-            loss = svi.step(batch)
+        train_history: List[float] = []
+        val_history: List[float] = []
+        last_train_elbo = float("nan")
+
+        for epoch in iterator:
+            train_loss_total = 0.0
+            train_n_obs = 0
+
+            for batch in dataloader_train:
+                loss = svi.step(batch)
+                train_loss_total += loss
+                train_n_obs += batch.responses.shape[0]
+            train_elbo = train_loss_total / max(train_n_obs, 1)
+            train_history.append(train_elbo)
+
+            val_nll = float("nan")
+            if dataloader_val is not None:
+                val_loss_total = 0.0
+                val_n_obs = 0
+                with torch.no_grad():
+                    for batch in dataloader_val:
+                        val_loss_total += svi.evaluate_loss(batch)
+                        val_n_obs += batch.responses.shape[0]
+                val_nll = val_loss_total / max(val_n_obs, 1)
+                val_history.append(val_nll)
+
             if use_tqdm:
-                iterator.set_postfix(loss=f"{loss:.2f}")
-            if interval and step % interval == 0:
-                msg = f"step={step:05d} loss={loss:.2f}"
-                if use_tqdm:
-                    iterator.write(msg)
-                else:
-                    print(msg)
-            history.append(loss)
+                iterator.set_description(
+                    f"Epoch {epoch} | train elbo: {train_elbo:.2f} (last: {last_train_elbo:.2f}) | val nll: {val_nll:.2f}"
+                )
+            elif self.vi_config.log_interval and epoch % self.vi_config.log_interval == 0:
+                print(
+                    f"Epoch {epoch} | train elbo: {train_elbo:.2f} (last: {last_train_elbo:.2f}) | val nll: {val_nll:.2f}"
+                )
+            last_train_elbo = train_elbo
+            if self.early_stopping(val_nll):
+                break
+        
+        if self.early_stopping.has_stopped():
+            print("Early stopping triggered")
+            print(f"Best val nll: {self.early_stopping.validation_loss_min:.2f}")
+            print(f"Best epoch: {epoch}")
 
-        return {"elbo": history}
+        self.history = {"train_elbo": train_history, "val_nll": val_history}
+        return self.history
+
+    def save_checkpoint(self, path: str | Path) -> None:
+        """Persist the current Pyro parameter store to disk."""
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pyro.get_param_store().save(str(path))
+
+    def load_checkpoint(self, path: str | Path, map_location: Optional[str] = None) -> None:
+        """
+        Load Pyro parameters from disk. Call after constructing the model/guide.
+
+        Args:
+            path: File produced by save_checkpoint.
+            map_location: Optional device mapping for tensors (e.g., 'cpu').
+        """
+        pyro.get_param_store().load(str(Path(path)), map_location=map_location)

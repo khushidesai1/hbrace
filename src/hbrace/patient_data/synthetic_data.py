@@ -99,12 +99,8 @@ class SimulatedDataGenerator:
         delta_ic = rng.normal(loc=0.0, scale=tau_c[None, :], size=(N, C))
 
         # Composition shift eta^t_i = eta^p_i + T W_P z_i + epsilon_i.
-        transition_prior = rng.random((C, C)) < 0.3
-        np.fill_diagonal(transition_prior, 0)
-        lambda_h = np.abs(rng.normal(loc=0.0, scale=0.2))
-        lambda_l = np.abs(rng.normal(loc=0.0, scale=0.05))
-        scale_T = np.where(transition_prior, lambda_l, lambda_h)
-        T = rng.laplace(loc=0.0, scale=scale_T, size=(C, C))
+        lambda_T = rng.beta(a=2.0, b=5.0)
+        T = rng.laplace(loc=0.0, scale=lambda_T, size=(C, C))
         np.fill_diagonal(T, 0.0)
         W_P = rng.normal(loc=0.0, scale=self.sim_config.sigma_W, size=(C, d))
 
@@ -176,7 +172,7 @@ class SimulatedDataGenerator:
             "beta_s": beta_s,
             "pre_cell_types": pre_cell_types,
             "post_cell_types": post_cell_types,
-            "transition_prior": transition_prior,
+            "lambda_T": lambda_T,
         }
 
         return SimulatedData(
@@ -187,7 +183,6 @@ class SimulatedDataGenerator:
             subtype_ids=subtype_ids,
             pi_p=pi_p,
             pi_t=pi_t,
-            transition_prior=transition_prior.astype(np.float32),
             pre_cell_types=pre_cell_types,
             post_cell_types=post_cell_types,
             extra_params=extra_params,
@@ -237,7 +232,6 @@ class SimulatedDataGenerator:
         np.save(out_dir / stem / f"{stem}_subtype_ids.npy", sim_data.subtype_ids)
         np.save(out_dir / stem / f"{stem}_pi_p.npy", sim_data.pi_p)
         np.save(out_dir / stem / f"{stem}_pi_t.npy", sim_data.pi_t)
-        np.save(out_dir / stem / f"{stem}_transition_prior.npy", sim_data.transition_prior)
 
         cfg = sim_data.config.__dict__
         (out_dir / stem / f"{stem}_config.json").write_text(json.dumps(cfg, indent=2))
@@ -263,7 +257,6 @@ class SimulatedDataGenerator:
         subtype_ids = np.load(stem / f"{stem.name}_subtype_ids.npy")
         pi_p = np.load(stem / f"{stem.name}_pi_p.npy")
         pi_t = np.load(stem / f"{stem.name}_pi_t.npy")
-        transition_prior = np.load(stem / f"{stem.name}_transition_prior.npy")
 
         return SimulatedData(
             config=sim_config,
@@ -273,6 +266,5 @@ class SimulatedDataGenerator:
             subtype_ids=subtype_ids,
             pi_p=pi_p,
             pi_t=pi_t,
-            transition_prior=transition_prior,
             extra_params={},
         )

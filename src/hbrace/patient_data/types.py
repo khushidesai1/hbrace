@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 import torch
@@ -18,7 +18,6 @@ class PatientBatch:
     cell_type_proportions: torch.Tensor # shape (N, C)
     responses: torch.Tensor  # shape (N,)
     subtype_ids: torch.Tensor  # shape (N,)
-    transition_prior: torch.Tensor  # shape (C, C)
 
     def to(self, device: torch.device | str) -> "PatientBatch":
         """Move all tensors to a specific device.
@@ -37,7 +36,6 @@ class PatientBatch:
             cell_type_proportions=self.cell_type_proportions.to(device),
             responses=self.responses.to(device),
             subtype_ids=self.subtype_ids.to(device),
-            transition_prior=self.transition_prior.to(device),
         )
 
 
@@ -69,17 +67,21 @@ class SimulatedData:
     subtype_ids: np.ndarray  # (N,)
     pi_p: np.ndarray  # (N, C)
     pi_t: np.ndarray  # (N, C)
-    transition_prior: np.ndarray  # (C, C)
     pre_cell_types: Optional[List[np.ndarray]] = None
     post_cell_types: Optional[List[np.ndarray]] = None
     extra_params: Optional[Dict[str, Any]] = None
 
-    def to_patient_batch(self, device: torch.device | str = "cpu") -> PatientBatch:
+    def to_patient_batch(
+        self,
+        device: torch.device | str = "cpu",
+        indices: Optional[Sequence[int]] = None,
+    ) -> PatientBatch:
         """
         Move tensors to a device and wrap them as a PatientBatch.
         
         Args:
             device: Device to move tensors to.
+            indices: Optional subset of patient indices to include.
 
         Returns:
             A PatientBatch object on the specified device.
@@ -87,17 +89,38 @@ class SimulatedData:
 
         device = torch.device(device)
 
+        n_patients = self.pre_counts.shape[0]
+        if indices is None:
+            idx = np.arange(n_patients)
+        else:
+            idx = np.asarray(indices)
+            if idx.dtype == bool:
+                idx = np.nonzero(idx)[0]
+            idx = np.atleast_1d(idx)
+        if idx.size == 0:
+            raise ValueError("indices is empty; cannot build a PatientBatch.")
+
+        pre_counts = self.pre_counts[idx]
+        on_counts = self.on_counts[idx]
+        responses = self.responses[idx]
+        subtype_ids = self.subtype_ids[idx]
+        pi_p = self.pi_p[idx]
+
+        cell_type_lists = None
+        if self.pre_cell_types is not None:
+            cell_type_lists = [self.pre_cell_types[i] for i in idx.tolist()]
+
         cell_type_proportions = compute_cell_type_proportions(
-            self.pre_cell_types,
-            self.subtype_ids,
-            self.pi_p,
+            cell_type_lists,
+            subtype_ids,
+            pi_p,
+            n_subtypes=self.config.n_subtypes,
         )
 
         return PatientBatch(
-            pre_counts=torch.as_tensor(self.pre_counts, dtype=torch.float32, device=device),
-            on_counts=torch.as_tensor(self.on_counts, dtype=torch.float32, device=device),
+            pre_counts=torch.as_tensor(pre_counts, dtype=torch.float32, device=device),
+            on_counts=torch.as_tensor(on_counts, dtype=torch.float32, device=device),
             cell_type_proportions=torch.as_tensor(cell_type_proportions, dtype=torch.float32, device=device),
-            responses=torch.as_tensor(self.responses, dtype=torch.float32, device=device),
-            subtype_ids=torch.as_tensor(self.subtype_ids, dtype=torch.long, device=device),
-            transition_prior=torch.as_tensor(self.transition_prior, dtype=torch.float32, device=device),
+            responses=torch.as_tensor(responses, dtype=torch.float32, device=device),
+            subtype_ids=torch.as_tensor(subtype_ids, dtype=torch.long, device=device),
         )

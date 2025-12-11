@@ -24,19 +24,32 @@ class ModelConfig:
 @dataclass
 class VIConfig:
     """Settings for variational inference."""
+    early_stopping_patience: float = 1e30
     learning_rate: float = 5e-3
-    num_steps: int = 5_000
+    num_epochs: int = 100
     log_interval: int = 100
     guide: str = "auto_delta"
     seed: int = 0
 
-def _dict_to_config(obj: Dict[str, Any]) -> Tuple[ModelConfig, VIConfig]:
+
+@dataclass
+class DataConfig:
+    """Configuration for the data."""
+    num_patients: int = 128
+    test_fraction: float = 0.25
+    batch_size: int = 8
+    seed: int = 0
+    device: str = "cpu"
+
+
+def _dict_to_config(obj: Dict[str, Any]) -> Tuple[ModelConfig, VIConfig, DataConfig]:
     model_config = ModelConfig(**obj["model"])
     vi_config = VIConfig(**obj["vi"])
-    return model_config, vi_config
+    data_config = DataConfig(**obj["data"])
+    return model_config, vi_config, data_config
 
 
-def load_config(path: str | Path) -> Tuple[ModelConfig, VIConfig]:
+def load_config(path: str | Path) -> Tuple[ModelConfig, VIConfig, DataConfig]:
     """Load a YAML config into the strongly-typed dataclasses."""
 
     with Path(path).open("r", encoding="utf-8") as handle:
