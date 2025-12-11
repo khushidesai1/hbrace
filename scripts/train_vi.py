@@ -13,7 +13,7 @@ from hbrace.patient_data.dataset import get_train_test_dataloaders
 # %% Load configuration with config path
 data_path = "./data/synthetic_data_test"
 config_path = "configs/experiment.yaml"
-checkpoint_path = "models/checkpoint.pth"
+checkpoint_path = "saved_models/checkpoint.pth"
 
 model_config, vi_config, data_config = load_config(config_path)
 
