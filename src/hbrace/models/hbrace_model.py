@@ -13,7 +13,7 @@ from hbrace.config import ModelConfig, VIConfig
 from hbrace.patient_data import PatientBatch
 from .guides import build_guide
 from .hierarchical import hierarchical_model
-from .utils import EarlyStopping
+from .utils import EarlyStopping, predictive_log_likelihood
 
 try:
     from tqdm.auto import trange
@@ -43,6 +43,7 @@ class HBRACEModel:
         dataloader_val: Optional[Iterable[PatientBatch]] = None,
         seed: int = 0,
         progress: bool = True,
+        val_samples: int = 32,
     ) -> Dict[str, List[float]]:
         """
         Run stochastic variational inference across epochs of patient batches.
@@ -52,6 +53,7 @@ class HBRACEModel:
             dataloader_val: Iterable yielding validation PatientBatch objects.
             seed: RNG seed for reproducibility.
             progress: Whether to show a tqdm progress bar when available.
+            val_samples: Number of posterior samples to use for predictive log likelihood.
         """
         pyro.clear_param_store()
         pyro.set_rng_seed(seed)
@@ -80,13 +82,9 @@ class HBRACEModel:
 
             val_nll = float("nan")
             if dataloader_val is not None:
-                val_loss_total = 0.0
-                val_n_obs = 0
-                with torch.no_grad():
-                    for batch in dataloader_val:
-                        val_loss_total += svi.evaluate_loss(batch)
-                        val_n_obs += batch.responses.shape[0]
-                val_nll = val_loss_total / max(val_n_obs, 1)
+                val_nll = -predictive_log_likelihood(
+                    self.model_fn, self.guide_fn, dataloader_val, num_samples=val_samples
+                )
                 val_history.append(val_nll)
 
             if use_tqdm:
@@ -98,7 +96,7 @@ class HBRACEModel:
                     f"Epoch {epoch} | train elbo: {train_elbo:.2f} (last: {last_train_elbo:.2f}) | val nll: {val_nll:.2f}"
                 )
             last_train_elbo = train_elbo
-            if self.early_stopping(val_nll):
+            if dataloader_val is not None and self.early_stopping(val_nll):
                 break
         
         if self.early_stopping.has_stopped():

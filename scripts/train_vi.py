@@ -74,7 +74,3 @@ if not os.path.exists(checkpoint_path):
 else:
     print(f"Loading checkpoint from {checkpoint_path}")
     model.load_checkpoint(checkpoint_path)
-
-# %% Visualize some of the learned parameters (T, z, u)
-
-# %% Evaluate posterior predictive on held-out (or training if none)

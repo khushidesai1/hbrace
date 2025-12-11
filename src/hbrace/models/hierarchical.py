@@ -16,7 +16,7 @@ from torch.distributions import constraints
 
 from hbrace.config import ModelConfig
 from hbrace.patient_data import PatientBatch
-from hbrace.utils import nb_logits
+from .utils import nb_logits
 
 
 def _clr(pi: torch.Tensor) -> torch.Tensor:
