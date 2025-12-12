@@ -150,13 +150,14 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             "z",
             Normal(torch.zeros(d_z, device=device), torch.ones(d_z, device=device)).to_event(1),
         )
-        log_mu_t_i = log_mu_p + torch.einsum("nd,cgd->ncg", z, Delta)
+        # Allow predictive sample dimensions to broadcast through all latent sites.
+        log_mu_t_i = log_mu_p + torch.einsum("...nd,...cgd->...ncg", z, Delta)
         mu_t_i = deterministic("mu_t", torch.exp(log_mu_t_i))
         delta = sample(
             "delta",
             Normal(torch.zeros(C, device=device), delta_std).to_event(1),
         )
-        delta_expanded = delta.unsqueeze(-1).expand(n_patients, C, G)
+        delta_expanded = delta.unsqueeze(-1).expand(phi_p.shape)
         phi_t = deterministic("phi_t", phi_p * torch.exp(delta_expanded))
 
         epsilon = sample(
@@ -165,7 +166,9 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         )
 
         eta_p = _clr(pi_p)
-        eta_t = deterministic("eta_t", eta_p + (z @ W.t()) @ T.T + epsilon)
+        zW = torch.einsum("...nd,...cd->...nc", z, W)
+        eta_shift = torch.einsum("...nc,...ct->...nt", zW, T)
+        eta_t = deterministic("eta_t", eta_p + eta_shift + epsilon)
         pi_t = deterministic("pi_t", _inv_clr(eta_t))
 
         logits_t = nb_logits(mu_t_i, phi_t)
@@ -182,12 +185,13 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             "u",
             Normal(torch.zeros(r_u, device=device), torch.ones(r_u, device=device)).to_event(1),
         )
+        subtype_ids_ohe = torch.nn.functional.one_hot(batch.subtype_ids, num_classes=config.n_subtypes)
         logit_y = deterministic(
             "logit_y",
             beta0
             + (pi_t * beta_t).sum(dim=-1)
             + (u * gamma).sum(dim=-1)
-            + beta_s[batch.subtype_ids],
+            + (beta_s * subtype_ids_ohe).sum(dim=-1),
         )
         sample(
             "y",

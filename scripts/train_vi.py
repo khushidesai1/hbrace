@@ -48,6 +48,7 @@ if not os.path.exists(checkpoint_path):
         device=data_config.device,
         sim_data=sim_data,
         test_fraction=data_config.test_fraction,
+        seed=data_config.seed,
     )
 
     training_history = model.train(

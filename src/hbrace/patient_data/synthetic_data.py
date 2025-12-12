@@ -87,7 +87,8 @@ class SimulatedDataGenerator:
         # Base NB parameters for pre-treatment f^p_c(x).
         log_mu_p = rng.normal(loc=1.5, scale=0.8, size=(C, G))
         mu_p = np.exp(log_mu_p)
-        phi_p = np.exp(rng.normal(loc=1.0, scale=0.5, size=C))
+        phi_p_std = rng.gamma(shape=2.0, scale=1.0, size=(C, G))
+        phi_p = rng.gamma(shape=phi_p_std, scale=1.0)
 
         # Latent treatment effects and confounders.
         z = rng.normal(loc=0.0, scale=1.0, size=(N, d))
@@ -112,7 +113,8 @@ class SimulatedDataGenerator:
         # On-treatment NB params mu^t_icg, phi^t_ic.
         dot_Dz = np.tensordot(z, Delta, axes=([1], [2]))  # (N, C, G)
         mu_t = np.exp(log_mu_p[None, :, :] + dot_Dz)
-        phi_t = phi_p[None, :] * np.exp(delta_ic)
+        delta_ic_exp = delta_ic[..., None]  # (N, C, 1)
+        phi_t = phi_p[None, :, :] * np.exp(delta_ic_exp)
 
         # Sample cell-level data and track cell types.
         pre_cells: List[np.ndarray] = []
@@ -125,14 +127,14 @@ class SimulatedDataGenerator:
             ct_pre = rng.choice(C, size=m_i, p=pi_p[i])
             X_pre = np.zeros((m_i, G), dtype=np.int64)
             for j, c_idx in enumerate(ct_pre):
-                X_pre[j] = sample_nb(mu_p[c_idx], np.repeat(phi_p[c_idx], G), rng)
+                X_pre[j] = sample_nb(mu_p[c_idx], phi_p[c_idx], rng)
             pre_cells.append(X_pre)
             pre_cell_types.append(ct_pre)
 
             ct_post = rng.choice(C, size=n_i, p=pi_t[i])
             X_post = np.zeros((n_i, G), dtype=np.int64)
             for k, c_idx in enumerate(ct_post):
-                X_post[k] = sample_nb(mu_t[i, c_idx], np.repeat(phi_t[i, c_idx], G), rng)
+                X_post[k] = sample_nb(mu_t[i, c_idx], phi_t[i, c_idx], rng)
             post_cells.append(X_post)
             post_cell_types.append(ct_post)
 
@@ -158,6 +160,7 @@ class SimulatedDataGenerator:
             "u": u,
             "mu_p": mu_p,
             "phi_p": phi_p,
+            "phi_p_std": phi_p_std,
             "mu_t": mu_t,
             "phi_t": phi_t,
             "theta": theta,

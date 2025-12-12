@@ -58,7 +58,12 @@ class HBRACEModel:
         pyro.clear_param_store()
         pyro.set_rng_seed(seed)
 
-        self.guide_fn = build_guide(self.model_fn, self.model_config, self.vi_config.guide)
+        self.guide_fn = build_guide(
+            self.model_fn,
+            self.model_config,
+            self.vi_config.guide,
+            rank=self.vi_config.guide_rank,
+        )
         optimizer = ClippedAdam({"lr": self.vi_config.learning_rate})
         svi = SVI(self.model_fn, self.guide_fn, optimizer, loss=Trace_ELBO())
 
