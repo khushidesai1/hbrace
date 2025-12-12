@@ -56,20 +56,31 @@ if not os.path.exists(checkpoint_path):
         dataloader_val=dataloader_val,
         seed=data_config.seed,
         progress=True,
+        grad_clip=5.0,
     )
     train_elbo_history = training_history["train_elbo"]
     val_nll_history = training_history["val_nll"]
+    val_elbo_history = training_history.get("val_elbo", [])
 
     # Visualize the training/validation curves
     os.makedirs("results", exist_ok=True)
     plt.plot(train_elbo_history, label="train elbo")
-    if val_nll_history:
-        plt.plot(val_nll_history, label="val nll")
+    if val_elbo_history:
+        plt.plot(val_elbo_history, label="val elbo")
     plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Training progress")
+    plt.ylabel("ELBO")
+    plt.title("Training progress (ELBO)")
     plt.legend()
     plt.savefig("results/elbo_curve.png")
+
+    if val_nll_history:
+        plt.figure()
+        plt.plot(val_nll_history, label="val nll", color="orange")
+        plt.xlabel("Epoch")
+        plt.ylabel("Negative log likelihood")
+        plt.title("Validation NLL")
+        plt.legend()
+        plt.savefig("results/val_nll_curve.png")
 
     model.save_checkpoint(checkpoint_path)
 else:

@@ -53,7 +53,10 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     # Mean and dispersion shifts for on-treatment distributions.
     Delta_std = sample(
         "Delta_std",
-        HalfNormal(torch.full((C, G, d_z), 0.5, device=device)).to_event(3),
+        Gamma(
+            torch.full((C, G, d_z), 2.0, device=device),
+            torch.full((C, G, d_z), 2.0, device=device),
+        ).to_event(3),
     )
     Delta = sample("Delta", Normal(torch.zeros((C, G, d_z), device=device), Delta_std).to_event(3))
     delta_std = sample(

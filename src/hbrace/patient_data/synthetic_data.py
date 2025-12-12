@@ -95,7 +95,8 @@ class SimulatedDataGenerator:
         u = rng.normal(loc=0.0, scale=1.0, size=(N, r))
 
         # Phenotypic shifts for on-treatment counts.
-        Delta = rng.normal(loc=0.0, scale=self.sim_config.sigma_D, size=(C, G, d))
+        Delta_std = rng.gamma(shape=2.0, scale=0.5, size=(C, G, d))
+        Delta = rng.normal(loc=0.0, scale=Delta_std, size=(C, G, d))
         tau_c = np.abs(rng.normal(loc=0.0, scale=0.5, size=C)) + 1e-3
         delta_ic = rng.normal(loc=0.0, scale=tau_c[None, :], size=(N, C))
 
@@ -168,6 +169,7 @@ class SimulatedDataGenerator:
             "T": T,
             "W_P": W_P,
             "Delta": Delta,
+            "Delta_std": Delta_std,
             "delta_ic": delta_ic,
             "beta0": beta0,
             "beta_t": beta_t,

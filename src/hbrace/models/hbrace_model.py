@@ -44,6 +44,7 @@ class HBRACEModel:
         seed: int = 0,
         progress: bool = True,
         val_samples: int = 32,
+        grad_clip: Optional[float] = None,
     ) -> Dict[str, List[float]]:
         """
         Run stochastic variational inference across epochs of patient batches.
@@ -72,6 +73,7 @@ class HBRACEModel:
 
         train_history: List[float] = []
         val_history: List[float] = []
+        val_elbo_history: List[float] = []
         last_train_elbo = float("nan")
 
         for epoch in iterator:
@@ -80,17 +82,31 @@ class HBRACEModel:
 
             for batch in dataloader_train:
                 loss = svi.step(batch)
+                if grad_clip is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        [p for p in pyro.get_param_store().values() if p.requires_grad],
+                        grad_clip,
+                    )
                 train_loss_total += loss
                 train_n_obs += batch.responses.shape[0]
             train_elbo = train_loss_total / max(train_n_obs, 1)
             train_history.append(train_elbo)
 
             val_nll = float("nan")
+            val_elbo = float("nan")
             if dataloader_val is not None:
+                val_loss_total = 0.0
+                val_n_obs = 0
+                with torch.no_grad():
+                    for batch in dataloader_val:
+                        val_loss_total += svi.evaluate_loss(batch)
+                        val_n_obs += batch.responses.shape[0]
+                val_elbo = val_loss_total / max(val_n_obs, 1)
                 val_nll = -predictive_log_likelihood(
                     self.model_fn, self.guide_fn, dataloader_val, num_samples=val_samples
                 )
                 val_history.append(val_nll)
+                val_elbo_history.append(val_elbo)
 
             if use_tqdm:
                 iterator.set_description(
@@ -109,7 +125,11 @@ class HBRACEModel:
             print(f"Best val nll: {self.early_stopping.validation_loss_min:.2f}")
             print(f"Best epoch: {epoch}")
 
-        self.history = {"train_elbo": train_history, "val_nll": val_history}
+        self.history = {
+            "train_elbo": train_history,
+            "val_nll": val_history,
+            "val_elbo": val_elbo_history,
+        }
         return self.history
 
     def save_checkpoint(self, path: str | Path) -> None:

@@ -20,6 +20,7 @@ def build_guide(model: Callable, config: ModelConfig, strategy: str, rank: Optio
     """
 
     strategy = strategy.lower()
+    # Hide discrete site y from the guide so autoguides only parameterize continuous latents.
     model_for_guide = poutine.block(model, hide=["y"])
     if strategy == "auto_delta":
         return AutoDelta(model_for_guide)
