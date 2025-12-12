@@ -36,7 +36,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     """
     
     device = batch.pre_counts.device
-    n_patients = batch.responses.shape[0]
+    n_patients = batch.pre_counts.shape[0]
     C = config.n_cell_types
     G = config.n_genes
     d_z = config.z_dim
@@ -49,15 +49,6 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         constraint=constraints.simplex,
     )
     theta_expanded = theta[batch.subtype_ids]
-
-    # Pre-treatment NB dispersion prior (cell-type level).
-    phi_p_std = sample(
-        "phi_p_std",
-        Gamma(
-            torch.full((C,), config.nb_dispersion_prior, device=device),
-            torch.full((C,), config.nb_dispersion_rate, device=device),
-        ).to_event(1),
-    )
 
     # Mean and dispersion shifts for on-treatment distributions.
     Delta_std = sample(
@@ -130,20 +121,26 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         )
         mu_p = torch.exp(log_mu_p)
 
+        phi_p_std = sample(
+            "phi_p_std",
+            Gamma(
+                torch.full((C, G), config.nb_dispersion_prior, device=device),
+                torch.full((C, G), config.nb_dispersion_rate, device=device),
+            ).to_event(2),
+        )
         phi_p = sample(
             "phi_p",
             Gamma(
                 phi_p_std,
                 torch.ones_like(phi_p_std),
-            ).to_event(1),
+            ).to_event(2),
         )
 
-        phi_p_exp = phi_p.unsqueeze(-1).expand(n_patients, C, G)
-        logits_p = nb_logits(mu_p, phi_p_exp)
+        logits_p = nb_logits(mu_p, phi_p)
         f_p = sample(
             "f_p",
             NegativeBinomial(
-                total_count=phi_p_exp,
+                total_count=phi_p,
                 logits=logits_p,
             ).to_event(2),
             obs=batch.pre_counts,
@@ -153,15 +150,14 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             "z",
             Normal(torch.zeros(d_z, device=device), torch.ones(d_z, device=device)).to_event(1),
         )
-
         log_mu_t_i = log_mu_p + torch.einsum("nd,cgd->ncg", z, Delta)
         mu_t_i = deterministic("mu_t", torch.exp(log_mu_t_i))
-
         delta = sample(
             "delta",
             Normal(torch.zeros(C, device=device), delta_std).to_event(1),
         )
-        phi_t_i = deterministic("phi_t", phi_p * torch.exp(delta))
+        delta_expanded = delta.unsqueeze(-1).expand(n_patients, C, G)
+        phi_t = deterministic("phi_t", phi_p * torch.exp(delta_expanded))
 
         epsilon = sample(
             "epsilon",
@@ -172,12 +168,11 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         eta_t = deterministic("eta_t", eta_p + (z @ W.t()) @ T.T + epsilon)
         pi_t = deterministic("pi_t", _inv_clr(eta_t))
 
-        phi_t_exp = phi_t_i.unsqueeze(-1).expand(n_patients, C, G)
-        logits_t = nb_logits(mu_t_i, phi_t_exp)
+        logits_t = nb_logits(mu_t_i, phi_t)
         f_t = sample(
             "f_t",
             NegativeBinomial(
-                total_count=phi_t_exp,
+                total_count=phi_t,
                 logits=logits_t,
             ).to_event(2),
             obs=batch.on_counts,
