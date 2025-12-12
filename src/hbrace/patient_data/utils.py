@@ -55,7 +55,7 @@ def sample_nb(mu: np.ndarray, phi: np.ndarray, rng: np.random.Generator) -> np.n
 def collapse_cells(
     cells: List[np.ndarray], cell_types: List[np.ndarray], n_cell_types: int
 ) -> np.ndarray:
-    """Average cell-level gene counts into patient x cell-type x gene tensors."""
+    """Sum cell-level gene counts into patient x cell-type x gene tensors."""
 
     n_patients = len(cells)
     n_genes = cells[0].shape[1]
@@ -65,7 +65,7 @@ def collapse_cells(
             mask = types == c
             if not np.any(mask):
                 continue
-            aggregated[idx, c] = counts[mask].mean(axis=0)
+            aggregated[idx, c] = counts[mask].sum(axis=0)
     return aggregated
 
 def compute_cell_type_proportions(

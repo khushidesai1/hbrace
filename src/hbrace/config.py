@@ -4,7 +4,7 @@ from __future__ import annotations
 import yaml
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 
 
 @dataclass
@@ -29,6 +29,7 @@ class VIConfig:
     num_epochs: int = 100
     log_interval: int = 100
     guide: str = "auto_delta"
+    guide_rank: Optional[int] = None
     seed: int = 0
 
 

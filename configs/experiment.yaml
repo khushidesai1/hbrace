@@ -16,7 +16,7 @@ model:
   nb_dispersion_rate: 1.0
 vi:
   early_stopping_patience: 50
-  learning_rate: 0.003
+  learning_rate: 0.0005
   num_epochs: 200
   log_interval: 100
-  guide: auto_lowrank
+  guide: auto_normal
