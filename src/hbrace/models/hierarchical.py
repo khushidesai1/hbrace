@@ -36,6 +36,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     
     device = batch.pre_counts.device
     n_patients = batch.pre_counts.shape[0]
+
     C = config.n_cell_types
     G = config.n_genes
     d_z = config.z_dim
@@ -117,8 +118,8 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     # Patient-level plate.
     with plate("patients", n_patients):
         tau_i_p = sample(
-        "tau_i_p",
-        Gamma(torch.tensor(2.0, device=device), torch.tensor(5.0, device=device)),
+            "tau_i_p",
+            Gamma(torch.tensor(2.0, device=device), torch.tensor(5.0, device=device)),
         )
         pi_p = sample(
             "pi_p",

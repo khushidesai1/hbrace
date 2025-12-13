@@ -52,10 +52,33 @@ def get_train_test_dataloaders(
     test_count = min(test_count, num_patients - 1)
     train_count = num_patients - test_count
 
-    # Get train and test indices
+    # Get train and test indices from a single shuffle
     perm = torch.randperm(num_patients, generator=generator).tolist()
     train_indices = perm[:train_count]
     test_indices = perm[train_count:train_count + test_count]
+
+    # Oversample only on training data if imbalanced
+    responses = torch.as_tensor(sim_data.responses)
+    train_responses = responses[train_indices]
+    n_pos = (train_responses == 1).sum().item()
+    n_neg = (train_responses == 0).sum().item()
+    ratio = n_pos / max(n_neg, 1)
+    if ratio < 0.8 or ratio > 1.2:
+        minority_label = 1 if n_pos < n_neg else 0
+        minority_indices = [idx for idx in train_indices if responses[idx] == minority_label]
+        majority_indices = [idx for idx in train_indices if responses[idx] != minority_label]
+        oversample_count = abs(n_pos - n_neg)
+        if oversample_count > 0 and minority_indices:
+            extra = torch.randint(
+                low=0,
+                high=len(minority_indices),
+                size=(oversample_count,),
+                generator=generator,
+            ).tolist()
+            train_indices = majority_indices + [minority_indices[i] for i in extra]
+            # reshuffle oversampled train indices
+            perm_train = torch.randperm(len(train_indices), generator=generator).tolist()
+            train_indices = [train_indices[i] for i in perm_train]
     
     # Create train and test dataloaders
     train_dataloader = make_dataloader(train_indices, batch_size, device, sim_data, generator)
@@ -86,7 +109,7 @@ def make_dataloader(
         PatientIndexDataset(indices),
         batch_size=batch_size,
         shuffle=True,
-        drop_last=False,
+        drop_last=True,  # enforce fixed batch size to avoid shape mismatches in plates
         generator=generator,
         collate_fn=lambda batch_idxs: sim_data.to_patient_batch(
             device=device, indices=batch_idxs

@@ -4,7 +4,7 @@ import os
 import pyro
 import matplotlib.pyplot as plt
 import torch
-
+import yaml
 from hbrace.config import load_config
 from hbrace.models import HBRACEModel
 from hbrace.patient_data import SimulatedDataGenerator
@@ -31,6 +31,9 @@ if not os.path.exists(data_path):
         save=True, 
         name=data_path.split("/")[-1]
     )
+    # Save the config to the results/{run_name}/config.yaml
+    with open(f"results/{run_name}/config.yaml", "w") as f:
+        yaml.dump({"model": model_config.__dict__, "vi": vi_config.__dict__, "data": data_config.__dict__}, f)
 else:
     print(f"Loading data from {data_path}")
     sim_data = SimulatedDataGenerator.load(data_path)

@@ -111,4 +111,5 @@ def compute_cell_type_proportions(
         if not np.any(patient_idxs):
             continue
         subtype_cell_type_proportions[subtype] = patient_cell_type_proportions[patient_idxs].mean(axis=0)
+    subtype_cell_type_proportions = np.clip(subtype_cell_type_proportions, 1e-5, 1.0)
     return subtype_cell_type_proportions
