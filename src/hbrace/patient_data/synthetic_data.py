@@ -86,9 +86,9 @@ class SimulatedDataGenerator:
             pi_p[i] = rng.dirichlet(tau[i] * theta[subtype_ids[i]])
 
         # Base NB parameters for pre-treatment f^p_c(x).
-        log_mu_p = rng.normal(loc=1.5, scale=0.8, size=(C, G))
+        log_mu_p = rng.normal(loc=1.0, scale=0.5, size=(N, C, G))
         mu_p = np.exp(log_mu_p)
-        phi_p_std = rng.gamma(shape=2.0, scale=1.0, size=(C, G))
+        phi_p_std = rng.gamma(shape=2.0, scale=0.5, size=(N, C, G))  # mean 1 / rate=2
         phi_p = rng.gamma(shape=phi_p_std, scale=1.0)
 
         # Latent treatment effects and confounders.
@@ -96,7 +96,7 @@ class SimulatedDataGenerator:
         u = rng.normal(loc=0.0, scale=1.0, size=(N, r))
 
         # Phenotypic shifts for on-treatment counts.
-        Delta_std = rng.gamma(shape=2.0, scale=0.5, size=(C, G, d))
+        Delta_std = rng.gamma(shape=2.0, scale=0.2, size=(C, G, d))
         Delta = rng.normal(loc=0.0, scale=Delta_std, size=(C, G, d))
         tau_c = np.abs(rng.normal(loc=0.0, scale=0.5, size=C)) + 1e-3
         delta_ic = rng.normal(loc=0.0, scale=tau_c[None, :], size=(N, C))
@@ -113,11 +113,11 @@ class SimulatedDataGenerator:
         pi_t = inv_clr(eta_t)
 
         # On-treatment NB params mu^t_icg, phi^t_ic.
-        dot_Dz = np.tensordot(z, Delta, axes=([1], [2]))  # (N, C, G)
-        mu_t = np.exp(log_mu_p[None, :, :] + dot_Dz)
+        dot_Dz = np.einsum("nd,cgd->ncg", z, Delta)  # (N, C, G)
+        mu_t = np.exp(log_mu_p + dot_Dz)
         delta_ic_exp = delta_ic[..., None]  # (N, C, 1)
-        phi_t = phi_p[None, :, :] * np.exp(delta_ic_exp)
-
+        phi_t = phi_p * np.exp(delta_ic_exp)
+        
         # Sample cell-level data and track cell types.
         pre_cells: List[np.ndarray] = []
         pre_cell_types: List[np.ndarray] = []
@@ -129,7 +129,7 @@ class SimulatedDataGenerator:
             ct_pre = rng.choice(C, size=m_i, p=pi_p[i])
             X_pre = np.zeros((m_i, G), dtype=np.int64)
             for j, c_idx in enumerate(ct_pre):
-                X_pre[j] = sample_nb(mu_p[c_idx], phi_p[c_idx], rng)
+                X_pre[j] = sample_nb(mu_p[i, c_idx], phi_p[i, c_idx], rng)
             pre_cells.append(X_pre)
             pre_cell_types.append(ct_pre)
 
@@ -144,10 +144,10 @@ class SimulatedDataGenerator:
         on_counts = collapse_cells(post_cells, post_cell_types, C)
 
         # Patient response y_i via logistic regression on composition, u, and subtype.
-        beta0 = rng.normal(0.0, 0.5)
-        beta_t = rng.normal(0.0, 0.5, size=C)
-        gamma = rng.normal(0.0, 0.5, size=r)
-        beta_s = rng.normal(0.0, 0.5, size=S)
+        beta0 = rng.normal(0.0, 2.0)
+        beta_t = rng.normal(0.0, 2.0, size=C)
+        gamma = rng.normal(0.0, 2.0, size=r)
+        beta_s = rng.normal(0.0, 2.0, size=S)
         linear = (
             beta0
             + (pi_t * beta_t[None, :]).sum(axis=1)
@@ -238,6 +238,16 @@ class SimulatedDataGenerator:
         np.save(out_dir / stem / f"{stem}_subtype_ids.npy", sim_data.subtype_ids)
         np.save(out_dir / stem / f"{stem}_pi_p.npy", sim_data.pi_p)
         np.save(out_dir / stem / f"{stem}_pi_t.npy", sim_data.pi_t)
+        np.save(
+            out_dir / stem / f"{stem}_pre_cell_types.npy",
+            np.array(sim_data.pre_cell_types, dtype=object),
+            allow_pickle=True,
+        )
+        np.save(
+            out_dir / stem / f"{stem}_post_cell_types.npy",
+            np.array(sim_data.post_cell_types, dtype=object),
+            allow_pickle=True,
+        )
 
         cfg = sim_data.config.__dict__
         (out_dir / stem / f"{stem}_config.json").write_text(json.dumps(cfg, indent=2))
@@ -263,6 +273,8 @@ class SimulatedDataGenerator:
         subtype_ids = np.load(stem / f"{stem.name}_subtype_ids.npy")
         pi_p = np.load(stem / f"{stem.name}_pi_p.npy")
         pi_t = np.load(stem / f"{stem.name}_pi_t.npy")
+        pre_cell_types = np.load(stem / f"{stem.name}_pre_cell_types.npy", allow_pickle=True).tolist()
+        post_cell_types = np.load(stem / f"{stem.name}_post_cell_types.npy", allow_pickle=True).tolist()
 
         return SimulatedData(
             config=sim_config,
@@ -272,5 +284,7 @@ class SimulatedDataGenerator:
             subtype_ids=subtype_ids,
             pi_p=pi_p,
             pi_t=pi_t,
+            pre_cell_types=pre_cell_types,
+            post_cell_types=post_cell_types,
             extra_params={},
         )

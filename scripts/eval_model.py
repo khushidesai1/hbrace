@@ -1,4 +1,5 @@
 # %% Import necessary libraries
+import os
 import pyro
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,9 +14,9 @@ from hbrace.models.utils import predictive_log_likelihood
 from hbrace.models.guides import build_guide
 
 # %% Load the data and the model
-data_path = "./data/synthetic_data_test"
+data_path = "./data/synthetic_data_lower_variances"
 config_path = "configs/experiment.yaml"
-checkpoint_path = "saved_models/checkpoint.pth"
+checkpoint_path = "saved_models/checkpoint_lower_variances.pth"
 
 model_config, vi_config, data_config = load_config(config_path)
 
@@ -63,11 +64,12 @@ print(f"Average training NLL: {np.mean(train_log_liks):.2f} +/- {np.std(train_lo
 print(f"Generalization gap: {np.mean(val_log_liks) - np.mean(train_log_liks):.2f} +/- {np.std(val_log_liks - train_log_liks):.2f}")
 
 # %% Compute T statistics based on the discrepancy from Gelman et al. 1996
-ppc_samples = 128
+ppc_samples = 1000
 eps = 1e-6
 
 T_obs_total = torch.zeros(ppc_samples, device=data_config.device)
 T_rep_total = torch.zeros(ppc_samples, device=data_config.device)
+T_rep_samples = []
 
 for batch in dataloader_val:
     batch = batch.to(data_config.device)
@@ -97,6 +99,7 @@ for batch in dataloader_val:
 
     T_obs_total += T_obs
     T_rep_total += T_rep
+    T_rep_samples.append(T_rep.detach().cpu().numpy())
 
 ppc_p_value = (T_rep_total > T_obs_total).float().mean().item()
 print(f"\nPosterior predictive p-value (chi-squared discrepancy on responses): {ppc_p_value:.3f}")
@@ -115,4 +118,16 @@ null_T_rep = ((null_y_rep - null_probs) ** 2 / null_var).sum(dim=1)
 null_p_value = (null_T_rep > null_T_obs).float().mean().item()
 print(f"Baseline null p-value (global-mean Bernoulli): {null_p_value:.3f}")
 
-# %% Plot the simulations from the min X^2 distribution of y_rep and the min X^2 metric for observed value
+# %% Histogram of T_rep with observed T_obs line (chi-squared discrepancy on responses)
+if T_rep_samples:
+    T_rep_dist = np.concatenate(T_rep_samples)
+    T_obs_scalar = T_obs_total.mean().item()
+    plt.figure()
+    plt.hist(T_rep_dist, bins=30, color="lightgray", edgecolor="gray")
+    plt.axvline(T_obs_scalar, color="black", linestyle="-", linewidth=1.5)
+    plt.xlabel(r"$X^2_{\text{min}}(y^{rep})$")
+    plt.ylabel("Frequency")
+    plt.title("Posterior predictive discrepancy")
+    plt.tight_layout()
+    os.makedirs("results", exist_ok=True)
+    plt.savefig("results/ppc_chi2_hist.png")

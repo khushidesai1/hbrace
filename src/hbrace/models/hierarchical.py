@@ -7,7 +7,6 @@ from pyro.distributions import (
     Bernoulli,
     Dirichlet,
     Gamma,
-    HalfNormal,
     Laplace,
     NegativeBinomial,
     Normal,
@@ -61,13 +60,19 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     Delta = sample("Delta", Normal(torch.zeros((C, G, d_z), device=device), Delta_std).to_event(3))
     delta_std = sample(
         "delta_std",
-        HalfNormal(torch.full((C,), 0.5, device=device)).to_event(1),
+        Gamma(
+            torch.full((C,), 2.0, device=device),  # shape
+            torch.full((C,), 4.0, device=device),  # rate -> mean 0.5
+        ).to_event(1),
     )
 
     # Cell-type proportion shifts for on-treatment mixture weights.
     W_std = sample(
         "W_std",
-        HalfNormal(torch.full((C, d_z), 1.0, device=device)).to_event(2),
+        Gamma(
+            torch.full((C, d_z), 2.0, device=device),  # shape
+            torch.full((C, d_z), 4.0, device=device),  # rate -> mean 0.5
+        ).to_event(2),
     )
     W = sample(
         "W",
@@ -75,7 +80,10 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     )
     epsilon_std = sample(
         "epsilon_std",
-        HalfNormal(torch.full((C,), 0.2, device=device)).to_event(1),
+        Gamma(
+            torch.full((C,), 2.0, device=device),  # shape
+            torch.full((C,), 20.0, device=device),  # rate -> mean 0.1
+        ).to_event(1),
     )
 
     lambda_T = sample(
@@ -86,22 +94,24 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "T",
         Laplace(torch.zeros((C, C), device=device), lambda_T).to_event(2),
     )
+    # Enforce zero diagonal to mirror synthetic generator.
+    T = deterministic("T_masked", T * (1.0 - torch.eye(C, device=device)))
 
     beta0 = sample(
         "beta0",
-        Normal(torch.tensor(0.0, device=device), torch.tensor(1.0, device=device)),
+        Normal(torch.tensor(0.0, device=device), torch.tensor(2.0, device=device)),
     )
     beta_t = sample(
         "beta_t",
-        Normal(torch.zeros((C,), device=device), torch.full((C,), 1.0, device=device)).to_event(1),
+        Normal(torch.zeros((C,), device=device), torch.full((C,), 2.0, device=device)).to_event(1),
     )
     gamma = sample(
         "gamma",
-        Normal(torch.zeros((r_u,), device=device), torch.full((r_u,), 1.0, device=device)).to_event(1),
+        Normal(torch.zeros((r_u,), device=device), torch.full((r_u,), 2.0, device=device)).to_event(1),
     )
     beta_s = sample(
         "beta_s",
-        Normal(torch.zeros((config.n_subtypes,), device=device), torch.full((config.n_subtypes,), 1.0, device=device)).to_event(1),
+        Normal(torch.zeros((config.n_subtypes,), device=device), torch.full((config.n_subtypes,), 2.0, device=device)).to_event(1),
     )
 
     # Patient-level plate.
@@ -127,8 +137,8 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         phi_p_std = sample(
             "phi_p_std",
             Gamma(
-                torch.full((C, G), config.nb_dispersion_prior, device=device),
-                torch.full((C, G), config.nb_dispersion_rate, device=device),
+                torch.full((C, G), 2.0, device=device),
+                torch.full((C, G), 2.0, device=device),
             ).to_event(2),
         )
         phi_p = sample(
@@ -169,8 +179,9 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         )
 
         eta_p = _clr(pi_p)
-        zW = torch.einsum("...nd,...cd->...nc", z, W)
-        eta_shift = torch.einsum("...nc,...ct->...nt", zW, T)
+        # Composition shift: z @ (T @ W)^T to match synthetic generation ordering.
+        TW = torch.einsum("...ct,...td->...cd", T, W)
+        eta_shift = torch.einsum("...nd,...cd->...nc", z, TW)
         eta_t = deterministic("eta_t", eta_p + eta_shift + epsilon)
         pi_t = deterministic("pi_t", _inv_clr(eta_t))
 

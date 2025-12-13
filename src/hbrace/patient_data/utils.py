@@ -65,14 +65,14 @@ def collapse_cells(
             mask = types == c
             if not np.any(mask):
                 continue
-            aggregated[idx, c] = counts[mask].sum(axis=0)
+            aggregated[idx, c] = counts[mask].mean(axis=0)
     return aggregated
 
 def compute_cell_type_proportions(
     cell_type_lists: Optional[List[np.ndarray]],
     subtype_ids: np.ndarray,
-    pi_p: Optional[np.ndarray] = None,
     n_subtypes: Optional[int] = None,
+    n_cell_types: Optional[int] = None,
 ) -> np.ndarray:
     """
     Compute the average cell type proportions across patients for each subtype.
@@ -80,8 +80,8 @@ def compute_cell_type_proportions(
     Args:
         cell_type_lists: List of cell types for each patient.
         subtype_ids: Subtype ids for each patient.
-        pi_p: Optional patient-level mixture proportions (N, C) to fall back on.
         n_subtypes: Optional explicit number of subtypes to ensure consistent shape.
+        n_cell_types: Optional explicit number of cell types to ensure consistent shape.
 
     Returns:
         Average cell type proportions across patients for each subtype.
@@ -92,32 +92,23 @@ def compute_cell_type_proportions(
             raise ValueError("Cannot infer n_subtypes from empty subtype_ids.")
         n_subtypes = int(subtype_ids_np.max()) + 1
 
-    if cell_type_lists is not None:
-        # Derive number of cell types from the global max across patients.
+    if cell_type_lists is None:
+        raise ValueError("cell_type_lists must be provided to compute proportions.")
+
+    # Derive number of cell types from the global max across patients if not provided.
+    if n_cell_types is None:
         n_cell_types = max(int(ct.max()) for ct in cell_type_lists) + 1
-        n_patients = len(cell_type_lists)
+    n_patients = len(cell_type_lists)
 
-        patient_cell_type_proportions = np.zeros((n_patients, n_cell_types), dtype=np.float32)
-        for i, cell_types in enumerate(cell_type_lists):
-            counts = np.bincount(cell_types, minlength=n_cell_types)
-            patient_cell_type_proportions[i] = counts / counts.sum()
+    patient_cell_type_proportions = np.zeros((n_patients, n_cell_types), dtype=np.float32)
+    for i, cell_types in enumerate(cell_type_lists):
+        counts = np.bincount(cell_types, minlength=n_cell_types)
+        patient_cell_type_proportions[i] = counts / counts.sum()
 
-        subtype_cell_type_proportions = np.zeros((n_subtypes, n_cell_types), dtype=np.float32)
-        for subtype in range(n_subtypes):
-            patient_idxs = subtype_ids_np == subtype
-            if not np.any(patient_idxs):
-                continue
-            subtype_cell_type_proportions[subtype] = patient_cell_type_proportions[patient_idxs].mean(axis=0)
-        return subtype_cell_type_proportions
-
-    if pi_p is not None:
-        pi_p = np.asarray(pi_p)
-        n_cell_types = pi_p.shape[1]
-        subtype_cell_type_proportions = np.zeros((n_subtypes, n_cell_types), dtype=np.float32)
-        for subtype in range(n_subtypes):
-            mask = subtype_ids_np == subtype
-            if np.any(mask):
-                subtype_cell_type_proportions[subtype] = pi_p[mask].mean(axis=0)
-        return subtype_cell_type_proportions
-
-    raise ValueError("Either cell_type_lists or pi_p must be provided to compute proportions.")
+    subtype_cell_type_proportions = np.zeros((n_subtypes, n_cell_types), dtype=np.float32)
+    for subtype in range(n_subtypes):
+        patient_idxs = subtype_ids_np == subtype
+        if not np.any(patient_idxs):
+            continue
+        subtype_cell_type_proportions[subtype] = patient_cell_type_proportions[patient_idxs].mean(axis=0)
+    return subtype_cell_type_proportions

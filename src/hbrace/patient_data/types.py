@@ -51,8 +51,8 @@ class SimConfig:
     d_z: int = 3  # dim of treatment effect z_i
     r_u: int = 2  # dim of confounder u_i
     sigma_D: float = 0.5  # std for Delta_cg
-    sigma_W: float = 1.0  # std for W_P
-    sigma_eps: float = 0.2  # std for epsilon_i in eta^t
+    sigma_W: float = 0.5  # std for W_P
+    sigma_eps: float = 0.1  # std for epsilon_i in eta^t
     seed: int = 0
 
 
@@ -104,17 +104,18 @@ class SimulatedData:
         on_counts = self.on_counts[idx]
         responses = self.responses[idx]
         subtype_ids = self.subtype_ids[idx]
-        pi_p = self.pi_p[idx]
 
         cell_type_lists = None
         if self.pre_cell_types is not None:
             cell_type_lists = [self.pre_cell_types[i] for i in idx.tolist()]
+        else:
+            raise ValueError("pre_cell_types is required to compute cell type proportions.")
 
         cell_type_proportions = compute_cell_type_proportions(
             cell_type_lists,
             subtype_ids,
-            pi_p,
             n_subtypes=self.config.n_subtypes,
+            n_cell_types=self.config.n_cell_types,
         )
 
         return PatientBatch(

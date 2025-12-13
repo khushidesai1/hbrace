@@ -11,9 +11,9 @@ from hbrace.patient_data import SimulatedDataGenerator
 from hbrace.patient_data.dataset import get_train_test_dataloaders
 
 # %% Load configuration with config path
-data_path = "./data/synthetic_data_test"
+data_path = "./data/synthetic_data_lower_variances"
 config_path = "configs/experiment.yaml"
-checkpoint_path = "saved_models/checkpoint.pth"
+checkpoint_path = "saved_models/checkpoint_lower_variances.pth"
 
 model_config, vi_config, data_config = load_config(config_path)
 
