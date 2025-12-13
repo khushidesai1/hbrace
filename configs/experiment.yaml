@@ -1,3 +1,4 @@
+run_name: "lower_variances"
 data:
   num_patients: 128
   test_fraction: 0.25

@@ -47,7 +47,8 @@ def _dict_to_config(obj: Dict[str, Any]) -> Tuple[ModelConfig, VIConfig, DataCon
     model_config = ModelConfig(**obj["model"])
     vi_config = VIConfig(**obj["vi"])
     data_config = DataConfig(**obj["data"])
-    return model_config, vi_config, data_config
+    run_name = obj["run_name"]
+    return run_name, model_config, vi_config, data_config
 
 
 def load_config(path: str | Path) -> Tuple[ModelConfig, VIConfig, DataConfig]:

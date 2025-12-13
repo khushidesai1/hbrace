@@ -10,15 +10,17 @@ from hbrace.config import load_config
 from hbrace.models import HBRACEModel
 from hbrace.patient_data import SimulatedDataGenerator
 from hbrace.patient_data.dataset import get_train_test_dataloaders
-from hbrace.models.utils import predictive_log_likelihood
+from hbrace.models.utils import predictive_log_likelihood, chi_sq_ppc_pvalues_pre_post
+from hbrace.models.utils import auprc_for_responses
 from hbrace.models.guides import build_guide
+from sklearn.metrics import precision_recall_curve
 
 # %% Load the data and the model
-data_path = "./data/synthetic_data_lower_variances"
 config_path = "configs/experiment.yaml"
-checkpoint_path = "saved_models/checkpoint_lower_variances.pth"
+run_name, model_config, vi_config, data_config = load_config(config_path)
 
-model_config, vi_config, data_config = load_config(config_path)
+data_path = f"./data/synthetic_data_{run_name}"
+checkpoint_path = f"saved_models/checkpoint_{run_name}.pth"
 
 print("Loading synthetic data...")
 sim_data = SimulatedDataGenerator.load(data_path)
@@ -46,7 +48,7 @@ print("\nEvaluating predictive posterior...")
 
 train_log_liks = []
 val_log_liks = []
-sample_sizes = [4, 8, 16, 32, 64]
+sample_sizes = [64, 128, 256]
 
 for n in sample_sizes:
     train_ll = predictive_log_likelihood(model.model_fn, model.guide_fn,
@@ -63,71 +65,68 @@ print(f"Average validation NLL: {np.mean(val_log_liks):.2f} +/- {np.std(val_log_
 print(f"Average training NLL: {np.mean(train_log_liks):.2f} +/- {np.std(train_log_liks):.2f}")
 print(f"Generalization gap: {np.mean(val_log_liks) - np.mean(train_log_liks):.2f} +/- {np.std(val_log_liks - train_log_liks):.2f}")
 
-# %% Compute T statistics based on the discrepancy from Gelman et al. 1996
+# %% Posterior predictive checks on counts (pre/post) and AUPRC for responses
 ppc_samples = 1000
 eps = 1e-6
 
-T_obs_total = torch.zeros(ppc_samples, device=data_config.device)
-T_rep_total = torch.zeros(ppc_samples, device=data_config.device)
-T_rep_samples = []
+# Chi-squared discrepancy on counts (pre/post)
+ppc_counts = chi_sq_ppc_pvalues_pre_post(
+    model.model_fn,
+    model.guide_fn,
+    dataloader_val,
+    model_config,
+    num_samples=ppc_samples,
+    device=torch.device(data_config.device),
+    eps=eps,
+)
+print(
+    "\nPosterior predictive p-values (chi-squared on counts): "
+    f"pre={ppc_counts['pre']:.3f}, post={ppc_counts['post']:.3f}"
+)
 
-for batch in dataloader_val:
-    batch = batch.to(data_config.device)
-    predictive = pyro.infer.Predictive(
-        model.model_fn,
-        guide=model.guide_fn,
-        num_samples=ppc_samples,
-        return_sites=("logit_y",),
-        parallel=False,
-    )
-    samples = predictive(batch)
-    logits = samples["logit_y"]  # (S, B) or possibly (S, B, ...)
-    probs = torch.sigmoid(logits)
+# %% AUPRC for response prediction on validation set
+auprc, y_true, y_score = auprc_for_responses(
+    model.model_fn,
+    model.guide_fn,
+    dataloader_val,
+    num_samples=ppc_samples,
+    device=torch.device(data_config.device),
+)
+print(f"AUPRC on validation responses: {auprc:.3f}")
 
-    # Align observed responses with predictive samples, allowing for extra event dims.
-    y_obs = batch.responses
-    while y_obs.dim() < probs.dim() - 1:
-        y_obs = y_obs.unsqueeze(-1)
-    y_obs = y_obs.unsqueeze(0).expand_as(probs)
+# %% Plot the PR curve
+precision, recall, thresholds = precision_recall_curve(y_true, y_score)
+plt.figure()
+plt.plot(recall, precision, label="AUPRC")
+plt.xlabel("Recall")
+plt.ylabel("Precision")
+plt.title("PR Curve")
+plt.legend()
+plt.savefig(f"results/{run_name}/pr_curve.png")
 
-    var_term = (probs * (1 - probs)).clamp_min(eps)
-
-    # Collapse all non-sample dims for the chi-squared discrepancy.
-    T_obs = ((y_obs - probs) ** 2 / var_term).flatten(start_dim=1).sum(dim=1)  # (S,)
-    y_rep = Bernoulli(probs).sample()
-    T_rep = ((y_rep - probs) ** 2 / var_term).flatten(start_dim=1).sum(dim=1)  # (S,)
-
-    T_obs_total += T_obs
-    T_rep_total += T_rep
-    T_rep_samples.append(T_rep.detach().cpu().numpy())
-
-ppc_p_value = (T_rep_total > T_obs_total).float().mean().item()
-print(f"\nPosterior predictive p-value (chi-squared discrepancy on responses): {ppc_p_value:.3f}")
-
-# Baseline null (global-mean Bernoulli) PPC on responses
-all_val_batches = [b.to(data_config.device) for b in dataloader_val]
-val_responses = torch.cat([b.responses for b in all_val_batches], dim=0)
-global_mean = val_responses.mean().clamp(0.0, 1.0)
-
-null_probs = torch.full((ppc_samples, val_responses.shape[0]), global_mean, device=data_config.device)
-null_var = (null_probs * (1 - null_probs)).clamp_min(eps)
-null_y_obs = val_responses.unsqueeze(0).expand_as(null_probs)
-null_T_obs = ((null_y_obs - null_probs) ** 2 / null_var).sum(dim=1)
-null_y_rep = Bernoulli(null_probs).sample()
-null_T_rep = ((null_y_rep - null_probs) ** 2 / null_var).sum(dim=1)
-null_p_value = (null_T_rep > null_T_obs).float().mean().item()
-print(f"Baseline null p-value (global-mean Bernoulli): {null_p_value:.3f}")
-
-# %% Histogram of T_rep with observed T_obs line (chi-squared discrepancy on responses)
-if T_rep_samples:
-    T_rep_dist = np.concatenate(T_rep_samples)
-    T_obs_scalar = T_obs_total.mean().item()
+# %% Histogram of chi-squared discrepancies on post counts (from ppc_counts runs)
+def plot_ppc_hist(run_name, rep, obs, title, outfile):
     plt.figure()
-    plt.hist(T_rep_dist, bins=30, color="lightgray", edgecolor="gray")
-    plt.axvline(T_obs_scalar, color="black", linestyle="-", linewidth=1.5)
+    plt.hist(rep.numpy(), bins=30, color="lightgray", edgecolor="gray")
+    plt.axvline(obs.mean().item(), color="black", linestyle="-", linewidth=1.5)
     plt.xlabel(r"$X^2_{\text{min}}(y^{rep})$")
     plt.ylabel("Frequency")
-    plt.title("Posterior predictive discrepancy")
+    plt.title(title)
     plt.tight_layout()
-    os.makedirs("results", exist_ok=True)
-    plt.savefig("results/ppc_chi2_hist.png")
+    os.makedirs(f"results/{run_name}", exist_ok=True)
+    plt.savefig(outfile)
+
+plot_ppc_hist(
+    run_name=run_name,
+    rep=ppc_counts["pre_rep"],
+    obs=ppc_counts["pre_obs"],
+    title="PPC chi-squared (pre counts)",
+    outfile=f"results/{run_name}/ppc_chi2_pre_counts_hist.png",
+)
+plot_ppc_hist(
+    run_name=run_name,
+    rep=ppc_counts["post_rep"],
+    obs=ppc_counts["post_obs"],
+    title="PPC chi-squared (post counts)",
+    outfile=f"results/{run_name}/ppc_chi2_post_counts_hist.png",
+)

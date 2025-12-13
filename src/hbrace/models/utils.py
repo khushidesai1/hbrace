@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Tuple
 
 import numpy as np
 import torch
 from pyro import poutine
+from pyro.infer import Predictive
+from sklearn.metrics import average_precision_score
 
 
 def nb_logits(mean: torch.Tensor, total_count: torch.Tensor) -> torch.Tensor:
@@ -56,6 +58,118 @@ def predictive_log_likelihood(
     log_z = torch.logsumexp(log_weights_tensor - log_normalizer, dim=0)
 
     return log_z.item() / max(total_obs or 1, 1)
+
+
+def _nb_mean_var(mu: torch.Tensor, phi: torch.Tensor, eps: float = 1e-6):
+    """Mean/variance for NB with total_count=phi, logits from mu."""
+    mu = mu.clamp_min(eps)
+    phi = phi.clamp_min(eps)
+    var = mu + (mu * mu) / phi
+    return mu, var
+
+
+@torch.no_grad()
+def chi_sq_ppc_pvalues_pre_post(
+    model: Callable,
+    guide: Callable,
+    dataloader: Iterable,
+    config,
+    num_samples: int,
+    device: torch.device,
+    eps: float = 1e-6,
+):
+    """
+    Posterior predictive p-values using chi-squared discrepancy on pre/post counts.
+    Returns dict with 'pre', 'post'.
+    """
+    T_pre_obs_total = torch.zeros(num_samples, device=device)
+    T_pre_rep_total = torch.zeros(num_samples, device=device)
+    T_post_obs_total = torch.zeros(num_samples, device=device)
+    T_post_rep_total = torch.zeros(num_samples, device=device)
+
+    for batch in dataloader:
+        batch = batch.to(device)
+        predictive = Predictive(
+            model,
+            guide=guide,
+            num_samples=num_samples,
+            return_sites=("log_mu_p", "phi_p", "mu_t", "phi_t", "f_p", "f_t"),
+            parallel=False,
+        )
+        samples = predictive(batch)
+
+        mu_p = samples["log_mu_p"].exp()
+        phi_p = samples["phi_p"]
+        mu_t = samples["mu_t"]
+        phi_t = samples["phi_t"]
+        x_pre_rep = samples["f_p"]
+        x_post_rep = samples["f_t"]
+
+        x_pre_obs = batch.pre_counts.unsqueeze(0).expand_as(x_pre_rep)
+        x_post_obs = batch.on_counts.unsqueeze(0).expand_as(x_post_rep)
+
+        _, var_pre = _nb_mean_var(mu_p, phi_p, eps=eps)
+        _, var_post = _nb_mean_var(mu_t, phi_t, eps=eps)
+
+        T_pre_obs = ((x_pre_obs - mu_p) ** 2 / var_pre).flatten(start_dim=1).sum(dim=1)
+        T_pre_rep = ((x_pre_rep - mu_p) ** 2 / var_pre).flatten(start_dim=1).sum(dim=1)
+        T_post_obs = ((x_post_obs - mu_t) ** 2 / var_post).flatten(start_dim=1).sum(dim=1)
+        T_post_rep = ((x_post_rep - mu_t) ** 2 / var_post).flatten(start_dim=1).sum(dim=1)
+
+        T_pre_obs_total += T_pre_obs
+        T_pre_rep_total += T_pre_rep
+        T_post_obs_total += T_post_obs
+        T_post_rep_total += T_post_rep
+
+    p_pre = (T_pre_rep_total >= T_pre_obs_total).float().mean().item()
+    p_post = (T_post_rep_total >= T_post_obs_total).float().mean().item()
+
+    return {"pre": p_pre, "post": p_post,
+            "pre_obs": T_pre_obs_total.detach().cpu(),
+            "pre_rep": T_pre_rep_total.detach().cpu(),
+            "post_obs": T_post_obs_total.detach().cpu(),
+            "post_rep": T_post_rep_total.detach().cpu()}
+
+
+def auprc_for_responses(
+    model: Callable,
+    guide: Callable,
+    dataloader: Iterable,
+    num_samples: int,
+    device: torch.device,
+) -> Tuple[float, np.ndarray, np.ndarray]:
+    """
+    Compute AUPRC for response predictions using posterior predictive probabilities.
+    Args:
+        model: Pyro model callable.
+        guide: Trained guide callable.
+        dataloader: Iterable of PatientBatch objects.
+        num_samples: Number of posterior samples to average over.
+        device: Device to run the model on.
+    Returns:
+        AUPRC, y_true, y_score.
+    """
+    y_true_list = []
+    y_score_list = []
+    for batch in dataloader:
+        batch = batch.to(device)
+        predictive = Predictive(
+            model,
+            guide=guide,
+            num_samples=num_samples,
+            return_sites=("logit_y",),
+            parallel=False,
+        )
+        samples = predictive(batch)
+        probs = torch.sigmoid(samples["logit_y"])  # (S, B, ...)
+        probs_mean = probs.mean(dim=0).reshape(-1)
+        y_obs = batch.responses.reshape(-1)
+        y_true_list.append(y_obs.cpu().numpy())
+        y_score_list.append(probs_mean.cpu().numpy())
+
+    y_true = np.concatenate(y_true_list)
+    y_score = np.concatenate(y_score_list)
+    return average_precision_score(y_true, y_score), y_true, y_score
 
 
 class EarlyStopping:

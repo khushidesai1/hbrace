@@ -11,11 +11,11 @@ from hbrace.patient_data import SimulatedDataGenerator
 from hbrace.patient_data.dataset import get_train_test_dataloaders
 
 # %% Load configuration with config path
-data_path = "./data/synthetic_data_lower_variances"
 config_path = "configs/experiment.yaml"
-checkpoint_path = "saved_models/checkpoint_lower_variances.pth"
+run_name, model_config, vi_config, data_config = load_config(config_path)
 
-model_config, vi_config, data_config = load_config(config_path)
+data_path = f"./data/synthetic_data_{run_name}"
+checkpoint_path = f"saved_models/checkpoint_{run_name}.pth"
 
 torch.manual_seed(data_config.seed)
 generator = SimulatedDataGenerator.from_model_config(
@@ -71,7 +71,7 @@ if not os.path.exists(checkpoint_path):
     plt.ylabel("ELBO")
     plt.title("Training progress (ELBO)")
     plt.legend()
-    plt.savefig("results/elbo_curve.png")
+    plt.savefig(f"results/{run_name}/elbo_curve.png")
 
     if val_nll_history:
         plt.figure()
@@ -80,7 +80,7 @@ if not os.path.exists(checkpoint_path):
         plt.ylabel("Negative log likelihood")
         plt.title("Validation NLL")
         plt.legend()
-        plt.savefig("results/val_nll_curve.png")
+        plt.savefig(f"results/{run_name}/val_nll_curve.png")
 
     model.save_checkpoint(checkpoint_path)
 else:
