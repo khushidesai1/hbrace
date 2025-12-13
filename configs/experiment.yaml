@@ -1,4 +1,4 @@
-run_name: "lower_variances"
+run_name: "remove_T_diag"
 data:
   num_patients: 128
   test_fraction: 0.25
@@ -16,8 +16,8 @@ model:
   nb_dispersion_prior: 2.0
   nb_dispersion_rate: 1.0
 vi:
-  early_stopping_patience: 50
-  learning_rate: 0.001
-  num_epochs: 160
+  early_stopping_patience: 40
+  learning_rate: 0.003
+  num_epochs: 200
   log_interval: 100
   guide: auto_normal

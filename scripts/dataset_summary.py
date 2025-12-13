@@ -3,14 +3,19 @@ from hbrace.config import load_config
 from hbrace.patient_data import SimulatedDataGenerator
 
 # %% Load config and synthetic data
-model_config, vi_config, data_config = load_config("configs/experiment.yaml")
-sim_data = SimulatedDataGenerator.load("./data/synthetic_data_lower_variances")
+run_name, model_config, vi_config, data_config = load_config("configs/experiment.yaml")
+sim_data = SimulatedDataGenerator.load(f"./data/synthetic_data_{run_name}")
 
 subtypes = np.asarray(sim_data.subtype_ids)
 N, C, G = sim_data.pre_counts.shape
 
 print(f"N={N}, C={C}, G={G}")
 print("Subtype counts:", {s: int((subtypes == s).sum()) for s in range(model_config.n_subtypes)})
+
+num_responders = (sim_data.responses == 1).sum()
+num_non_responders = (sim_data.responses == 0).sum()
+print(f"Number of responders: {num_responders}, Number of non-responders: {num_non_responders}")
+print(f"Responder rate: {num_responders / (num_responders + num_non_responders)}")
 
 # %% Mixture variability (pi_p, pi_t)
 def summarize_mixtures(name, mat):

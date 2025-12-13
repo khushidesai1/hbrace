@@ -104,7 +104,7 @@ class SimulatedDataGenerator:
         # Composition shift eta^t_i = eta^p_i + T W_P z_i + epsilon_i.
         lambda_T = rng.beta(a=2.0, b=5.0)
         T = rng.laplace(loc=0.0, scale=lambda_T, size=(C, C))
-        np.fill_diagonal(T, 0.0)
+        # np.fill_diagonal(T, 0.0)
         W_P = rng.normal(loc=0.0, scale=self.sim_config.sigma_W, size=(C, d))
 
         eta_p = clr(pi_p)

@@ -24,7 +24,7 @@ class ModelConfig:
 @dataclass
 class VIConfig:
     """Settings for variational inference."""
-    early_stopping_patience: float = 1e30
+    early_stopping_patience: float = 5
     learning_rate: float = 5e-3
     num_epochs: int = 100
     log_interval: int = 100

@@ -35,7 +35,6 @@ class HBRACEModel:
         self.model_config = model_config
         self.vi_config = vi_config
         self.model_fn = functools.partial(hierarchical_model, config=model_config)
-        self.early_stopping = EarlyStopping(patience=float(vi_config.early_stopping_patience))
 
     def train(
         self,
@@ -58,6 +57,10 @@ class HBRACEModel:
         """
         pyro.clear_param_store()
         pyro.set_rng_seed(seed)
+        # Reset early stopping state for each training run.
+        self.early_stopping = EarlyStopping(
+            patience=float(self.vi_config.early_stopping_patience),
+        )
 
         self.guide_fn = build_guide(
             self.model_fn,

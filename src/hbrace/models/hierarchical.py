@@ -94,8 +94,8 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "T",
         Laplace(torch.zeros((C, C), device=device), lambda_T).to_event(2),
     )
-    # Enforce zero diagonal to mirror synthetic generator.
-    T = deterministic("T_masked", T * (1.0 - torch.eye(C, device=device)))
+    # # Enforce zero diagonal to mirror synthetic generator.
+    # T = deterministic("T_masked", T * (1.0 - torch.eye(C, device=device)))
 
     beta0 = sample(
         "beta0",

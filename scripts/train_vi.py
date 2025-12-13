@@ -63,7 +63,7 @@ if not os.path.exists(checkpoint_path):
     val_elbo_history = training_history.get("val_elbo", [])
 
     # Visualize the training/validation curves
-    os.makedirs("results", exist_ok=True)
+    os.makedirs(f"results/{run_name}", exist_ok=True)
     plt.plot(train_elbo_history, label="train elbo")
     if val_elbo_history:
         plt.plot(val_elbo_history, label="val elbo")
