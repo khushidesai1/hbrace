@@ -1,6 +1,6 @@
-run_name: "test_on_larger_data"
+run_name: "test_new_eval"
 data:
-  num_patients: 512
+  num_patients: 128
   test_fraction: 0.20
   batch_size: 8
   seed: 81
@@ -8,9 +8,9 @@ data:
 model:
   n_subtypes: 3
   n_cell_types: 8
-  n_genes: 500
-  z_dim: 10
-  u_dim: 10
+  n_genes: 100
+  z_dim: 8
+  u_dim: 8
   subtype_concentration: 2.0
   subtype_rate: 0.1
   nb_dispersion_prior: 2.0
@@ -18,6 +18,7 @@ model:
 vi:
   early_stopping_patience: 40
   learning_rate: 0.003
-  num_epochs: 200
+  num_epochs: 250
   log_interval: 100
-  guide: auto_normal
+  guide: auto_lowrank
+  guide_rank: 20
