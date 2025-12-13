@@ -32,8 +32,17 @@ if not os.path.exists(data_path):
         name=data_path.split("/")[-1]
     )
     # Save the config to the results/{run_name}/config.yaml
+    os.makedirs(f"results/{run_name}", exist_ok=True)
     with open(f"results/{run_name}/config.yaml", "w") as f:
-        yaml.dump({"model": model_config.__dict__, "vi": vi_config.__dict__, "data": data_config.__dict__}, f)
+        yaml.dump(
+            {
+                "run_name": run_name,
+                "model": model_config.__dict__,
+                "vi": vi_config.__dict__,
+                "data": data_config.__dict__,
+            },
+            f,
+        )
 else:
     print(f"Loading data from {data_path}")
     sim_data = SimulatedDataGenerator.load(data_path)

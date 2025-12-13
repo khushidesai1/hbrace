@@ -33,6 +33,7 @@ dataloader_train, dataloader_val = get_train_test_dataloaders(
     sim_data=sim_data,
     test_fraction=data_config.test_fraction,
     seed=data_config.seed,
+    oversample=False,
 )
 
 print("Loading trained model...")
