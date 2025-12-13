@@ -79,15 +79,21 @@ for batch in dataloader_val:
         parallel=False,
     )
     samples = predictive(batch)
-    logits = samples["logit_y"]  # (S, B)
+    logits = samples["logit_y"]  # (S, B) or possibly (S, B, ...)
     probs = torch.sigmoid(logits)
 
-    y_obs = batch.responses  # (B,)
+    # Align observed responses with predictive samples, allowing for extra event dims.
+    y_obs = batch.responses
+    while y_obs.dim() < probs.dim() - 1:
+        y_obs = y_obs.unsqueeze(-1)
+    y_obs = y_obs.unsqueeze(0).expand_as(probs)
+
     var_term = (probs * (1 - probs)).clamp_min(eps)
 
-    T_obs = ((y_obs - probs) ** 2 / var_term).sum(dim=1)  # (S,)
+    # Collapse all non-sample dims for the chi-squared discrepancy.
+    T_obs = ((y_obs - probs) ** 2 / var_term).flatten(start_dim=1).sum(dim=1)  # (S,)
     y_rep = Bernoulli(probs).sample()
-    T_rep = ((y_rep - probs) ** 2 / var_term).sum(dim=1)  # (S,)
+    T_rep = ((y_rep - probs) ** 2 / var_term).flatten(start_dim=1).sum(dim=1)  # (S,)
 
     T_obs_total += T_obs
     T_rep_total += T_rep
@@ -95,5 +101,18 @@ for batch in dataloader_val:
 ppc_p_value = (T_rep_total > T_obs_total).float().mean().item()
 print(f"\nPosterior predictive p-value (chi-squared discrepancy on responses): {ppc_p_value:.3f}")
 
+# Baseline null (global-mean Bernoulli) PPC on responses
+all_val_batches = [b.to(data_config.device) for b in dataloader_val]
+val_responses = torch.cat([b.responses for b in all_val_batches], dim=0)
+global_mean = val_responses.mean().clamp(0.0, 1.0)
+
+null_probs = torch.full((ppc_samples, val_responses.shape[0]), global_mean, device=data_config.device)
+null_var = (null_probs * (1 - null_probs)).clamp_min(eps)
+null_y_obs = val_responses.unsqueeze(0).expand_as(null_probs)
+null_T_obs = ((null_y_obs - null_probs) ** 2 / null_var).sum(dim=1)
+null_y_rep = Bernoulli(null_probs).sample()
+null_T_rep = ((null_y_rep - null_probs) ** 2 / null_var).sum(dim=1)
+null_p_value = (null_T_rep > null_T_obs).float().mean().item()
+print(f"Baseline null p-value (global-mean Bernoulli): {null_p_value:.3f}")
 
 # %% Plot the simulations from the min X^2 distribution of y_rep and the min X^2 metric for observed value

@@ -73,13 +73,14 @@ class SimulatedDataGenerator:
         # Subtype assignments and subtype-specific priors over T-cell states.
         subtype_ids = rng.integers(low=0, high=S, size=N)
         theta = np.zeros((S, C))
+        base_conc = 0.5
         for subtype in range(S):
             bump = np.zeros(C)
-            bump[subtype % C] = 3.0
-            theta[subtype] = rng.dirichlet(2.0 * np.ones(C) + bump)
+            bump[subtype % C] = 5.0
+            theta[subtype] = rng.dirichlet(base_conc * np.ones(C) + bump)
 
-        # Pre-treatment mixture pi_i^p with tau_i ~ Gamma(2, 0.1).
-        tau = rng.gamma(shape=2.0, scale=0.1, size=N)
+        # Pre-treatment mixture pi_i^p with tau_i ~ Gamma(2, 0.2).
+        tau = rng.gamma(shape=2.0, scale=0.2, size=N)
         pi_p = np.zeros((N, C))
         for i in range(N):
             pi_p[i] = rng.dirichlet(tau[i] * theta[subtype_ids[i]])

@@ -51,8 +51,8 @@ class SimConfig:
     d_z: int = 3  # dim of treatment effect z_i
     r_u: int = 2  # dim of confounder u_i
     sigma_D: float = 0.5  # std for Delta_cg
-    sigma_W: float = 0.5  # std for W_P
-    sigma_eps: float = 0.1  # std for epsilon_i in eta^t
+    sigma_W: float = 1.0  # std for W_P
+    sigma_eps: float = 0.2  # std for epsilon_i in eta^t
     seed: int = 0
 
 

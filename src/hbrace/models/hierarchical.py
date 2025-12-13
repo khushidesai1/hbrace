@@ -67,7 +67,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     # Cell-type proportion shifts for on-treatment mixture weights.
     W_std = sample(
         "W_std",
-        HalfNormal(torch.full((C, d_z), 0.5, device=device)).to_event(2),
+        HalfNormal(torch.full((C, d_z), 1.0, device=device)).to_event(2),
     )
     W = sample(
         "W",
@@ -75,7 +75,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     )
     epsilon_std = sample(
         "epsilon_std",
-        HalfNormal(torch.full((C,), 0.1, device=device)).to_event(1),
+        HalfNormal(torch.full((C,), 0.2, device=device)).to_event(1),
     )
 
     lambda_T = sample(
@@ -89,26 +89,26 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
 
     beta0 = sample(
         "beta0",
-        Normal(torch.tensor(0.0, device=device), torch.tensor(0.5, device=device)),
+        Normal(torch.tensor(0.0, device=device), torch.tensor(1.0, device=device)),
     )
     beta_t = sample(
         "beta_t",
-        Normal(torch.zeros((C,), device=device), torch.full((C,), 0.5, device=device)).to_event(1),
+        Normal(torch.zeros((C,), device=device), torch.full((C,), 1.0, device=device)).to_event(1),
     )
     gamma = sample(
         "gamma",
-        Normal(torch.zeros((r_u,), device=device), torch.full((r_u,), 0.5, device=device)).to_event(1),
+        Normal(torch.zeros((r_u,), device=device), torch.full((r_u,), 1.0, device=device)).to_event(1),
     )
     beta_s = sample(
         "beta_s",
-        Normal(torch.zeros((config.n_subtypes,), device=device), torch.full((config.n_subtypes,), 0.5, device=device)).to_event(1),
+        Normal(torch.zeros((config.n_subtypes,), device=device), torch.full((config.n_subtypes,), 1.0, device=device)).to_event(1),
     )
 
     # Patient-level plate.
     with plate("patients", n_patients):
         tau_i_p = sample(
-            "tau_i_p",
-            Gamma(torch.tensor(2.0, device=device), torch.tensor(0.1, device=device)),
+        "tau_i_p",
+        Gamma(torch.tensor(2.0, device=device), torch.tensor(5.0, device=device)),
         )
         pi_p = sample(
             "pi_p",
