@@ -1,4 +1,4 @@
-run_name: "test_new_eval"
+run_name: "test_500_genes"
 data:
   num_patients: 128
   test_fraction: 0.20
@@ -8,7 +8,7 @@ data:
 model:
   n_subtypes: 3
   n_cell_types: 8
-  n_genes: 100
+  n_genes: 500
   z_dim: 8
   u_dim: 8
   subtype_concentration: 2.0
