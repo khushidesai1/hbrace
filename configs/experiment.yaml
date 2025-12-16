@@ -1,24 +1,23 @@
-run_name: "test_new_eval"
+run_name: "remove_T_diag"
 data:
   num_patients: 128
-  test_fraction: 0.20
+  test_fraction: 0.25
   batch_size: 8
-  seed: 81
+  seed: 42
   device: cpu
 model:
   n_subtypes: 3
-  n_cell_types: 8
-  n_genes: 100
-  z_dim: 8
-  u_dim: 8
+  n_cell_types: 5
+  n_genes: 50
+  z_dim: 6
+  u_dim: 5
   subtype_concentration: 2.0
   subtype_rate: 0.1
   nb_dispersion_prior: 2.0
   nb_dispersion_rate: 1.0
 vi:
-  early_stopping_patience: 40
-  learning_rate: 0.0025
-  num_epochs: 350
+  early_stopping_patience: 25
+  learning_rate: 0.003
+  num_epochs: 500
   log_interval: 100
-  guide: auto_lowrank
-  guide_rank: 30
+  guide: auto_normal
