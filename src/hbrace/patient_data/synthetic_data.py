@@ -86,9 +86,10 @@ class SimulatedDataGenerator:
             pi_p[i] = rng.dirichlet(tau[i] * theta[subtype_ids[i]])
 
         # Base NB parameters for pre-treatment f^p_c(x).
-        log_mu_p = rng.normal(loc=1.0, scale=0.5, size=(N, C, G))
+        # Sparser gene counts: lower mean and tighter std to match model priors
+        log_mu_p = rng.normal(loc=0.8, scale=0.4, size=(N, C, G))  # lower for sparser counts
         mu_p = np.exp(log_mu_p)
-        phi_p_std = rng.gamma(shape=2.0, scale=0.5, size=(N, C, G))  # mean 1 / rate=2
+        phi_p_std = rng.gamma(shape=2.0, scale=0.25, size=(N, C, G))  # tighter dispersion (mean 0.5)
         phi_p = rng.gamma(shape=phi_p_std, scale=1.0)
 
         # Latent treatment effects and confounders.
@@ -96,9 +97,10 @@ class SimulatedDataGenerator:
         u = rng.normal(loc=0.0, scale=1.0, size=(N, r))
 
         # Phenotypic shifts for on-treatment counts.
-        Delta_std = rng.gamma(shape=2.0, scale=0.2, size=(C, G, d))
+        # Tighter treatment effects for better scaling to larger genes
+        Delta_std = rng.gamma(shape=2.0, scale=0.1, size=(C, G, d))  # scale 0.2->0.1: tighter
         Delta = rng.normal(loc=0.0, scale=Delta_std, size=(C, G, d))
-        tau_c = np.abs(rng.normal(loc=0.0, scale=0.5, size=C)) + 1e-3
+        tau_c = np.abs(rng.normal(loc=0.0, scale=0.25, size=C)) + 1e-3  # scale 0.5->0.25: tighter
         delta_ic = rng.normal(loc=0.0, scale=tau_c[None, :], size=(N, C))
 
         # Composition shift eta^t_i = eta^p_i + T W_P z_i + epsilon_i.

@@ -51,11 +51,12 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     theta_expanded = theta[batch.subtype_ids]
 
     # Mean and dispersion shifts for on-treatment distributions.
+    # Stricter priors: higher rate means smaller variance for better scaling to larger genes
     Delta_std = sample(
         "Delta_std",
         Gamma(
             torch.full((C, G, d_z), 2.0, device=device),
-            torch.full((C, G, d_z), 2.0, device=device),
+            torch.full((C, G, d_z), 5.0, device=device),  # rate 2->5: tighter prior (mean 0.4 vs 1.0)
         ).to_event(3),
     )
     Delta = sample("Delta", Normal(torch.zeros((C, G, d_z), device=device), Delta_std).to_event(3))
@@ -63,16 +64,17 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "delta_std",
         Gamma(
             torch.full((C,), 2.0, device=device),  # shape
-            torch.full((C,), 4.0, device=device),  # rate -> mean 0.5
+            torch.full((C,), 8.0, device=device),  # rate 4->8: tighter prior (mean 0.25 vs 0.5)
         ).to_event(1),
     )
 
     # Cell-type proportion shifts for on-treatment mixture weights.
+    # Stricter priors for better scaling
     W_std = sample(
         "W_std",
         Gamma(
             torch.full((C, d_z), 2.0, device=device),  # shape
-            torch.full((C, d_z), 4.0, device=device),  # rate -> mean 0.5
+            torch.full((C, d_z), 8.0, device=device),  # rate 4->8: tighter prior (mean 0.25 vs 0.5)
         ).to_event(2),
     )
     W = sample(
@@ -83,7 +85,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "epsilon_std",
         Gamma(
             torch.full((C,), 2.0, device=device),  # shape
-            torch.full((C,), 20.0, device=device),  # rate -> mean 0.1
+            torch.full((C,), 40.0, device=device),  # rate 20->40: tighter prior (mean 0.05 vs 0.1)
         ).to_event(1),
     )
 
@@ -126,20 +128,22 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             Dirichlet(tau_i_p.unsqueeze(-1) * theta_expanded.clamp_min(1e-6)),
         )
 
+        # Sparser gene counts: lower mean (1.5->1.0) and tighter std (0.8->0.5)
         log_mu_p = sample(
             "log_mu_p",
             Normal(
-                torch.full((C, G), 1.5, device=device),
-                torch.full((C, G), 0.8, device=device),
+                torch.full((C, G), 1.0, device=device),  # lower mean for sparser counts
+                torch.full((C, G), 0.5, device=device),  # tighter std
             ).to_event(2),
         )
         mu_p = torch.exp(log_mu_p)
 
+        # Tighter dispersion prior for more regularization
         phi_p_std = sample(
             "phi_p_std",
             Gamma(
                 torch.full((C, G), 2.0, device=device),
-                torch.full((C, G), 2.0, device=device),
+                torch.full((C, G), 4.0, device=device),  # rate 2->4: tighter prior
             ).to_event(2),
         )
         phi_p = sample(
