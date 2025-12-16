@@ -11,7 +11,7 @@ from hbrace.models import HBRACEModel
 from hbrace.patient_data import SimulatedDataGenerator
 from hbrace.patient_data.dataset import get_train_test_dataloaders
 
-from hbrace.models.utils import auprc_for_responses, predictive_log_likelihood
+from hbrace.models.utils import auprc_for_responses, predictive_log_likelihood, posterior_predictive_check
 from hbrace.models.guides import build_guide
 from sklearn.metrics import precision_recall_curve
 
@@ -86,3 +86,41 @@ plt.ylabel("Precision")
 plt.title("PR Curve")
 plt.legend()
 plt.savefig(f"results/{run_name}/pr_curve.png")
+
+# %% Posterior predictive check (chi-squared discrepancy on counts)
+print("\nPosterior predictive check (on pre/post count distributions)...")
+ppc_samples = 200
+p_value, T_obs, T_rep = posterior_predictive_check(
+    model.model_fn,
+    model.guide_fn,
+    dataloader_val,
+    num_samples=ppc_samples,
+    device=torch.device(data_config.device),
+    target="counts",  # chi-squared on pre/post count distributions
+)
+print(f"Posterior predictive p-value (chi-squared on counts): {p_value:.3f}")
+print(f"  (Good model fit: p-value close to 0.5, extreme values indicate misfit)")
+
+# %% Plot histogram of T_rep vs T_obs (Fig 3 style from Gelman et al. 1996)
+plt.figure(figsize=(10, 4))
+
+plt.subplot(1, 2, 1)
+plt.hist(T_obs, bins=30, alpha=0.7, label="T(y_obs)", color="blue")
+plt.hist(T_rep, bins=30, alpha=0.7, label="T(y_rep)", color="orange")
+plt.xlabel("Chi-squared discrepancy")
+plt.ylabel("Frequency")
+plt.title("Posterior Predictive Check")
+plt.legend()
+
+plt.subplot(1, 2, 2)
+plt.scatter(T_obs, T_rep, alpha=0.3, s=10)
+max_val = max(T_obs.max(), T_rep.max())
+plt.plot([0, max_val], [0, max_val], "r--", label="y=x")
+plt.xlabel("T(y_obs, θ)")
+plt.ylabel("T(y_rep, θ)")
+plt.title(f"p-value = {p_value:.3f}")
+plt.legend()
+
+plt.tight_layout()
+plt.savefig(f"results/{run_name}/ppc_histogram.png")
+print(f"Saved PPC histogram to results/{run_name}/ppc_histogram.png")

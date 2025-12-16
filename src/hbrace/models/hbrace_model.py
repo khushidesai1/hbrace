@@ -150,4 +150,6 @@ class HBRACEModel:
             path: File produced by save_checkpoint.
             map_location: Optional device mapping for tensors (e.g., 'cpu').
         """
-        pyro.get_param_store().load(str(Path(path)), map_location=map_location)
+        # PyTorch 2.6+ requires weights_only=False for Pyro param stores
+        state = torch.load(str(Path(path)), map_location=map_location, weights_only=False)
+        pyro.get_param_store().set_state(state)

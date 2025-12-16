@@ -101,6 +101,104 @@ def auprc_for_responses(
     return average_precision_score(y_true, y_score), y_true, y_score
 
 
+def posterior_predictive_check(
+    model: Callable,
+    guide: Callable,
+    dataloader: Iterable,
+    num_samples: int = 500,
+    device: torch.device = torch.device("cpu"),
+    target: str = "counts",
+) -> Tuple[float, np.ndarray, np.ndarray]:
+    """
+    Compute posterior predictive p-value using chi-squared discrepancy.
+
+    Following Gelman, Meng & Stern (1996) methodology:
+    1. Draw posterior samples θ^(s) from guide
+    2. For each sample, compute T(y_obs, θ) and T(y_rep, θ)
+    3. p-value = proportion where T(y_rep) >= T(y_obs)
+
+    Args:
+        model: Pyro model callable.
+        guide: Trained guide callable.
+        dataloader: Iterable of PatientBatch objects.
+        num_samples: Number of posterior samples.
+        device: Device to run computations on.
+        target: What to compute discrepancy on - "responses", "counts", or "both"
+
+    Returns:
+        p_value: Posterior predictive p-value (good models have p ~ 0.5)
+        T_obs_all: Chi-squared discrepancies for observed data (per sample)
+        T_rep_all: Chi-squared discrepancies for replicated data (per sample)
+    """
+    # Collect all batches first
+    all_batches = [batch.to(device) for batch in dataloader]
+
+    T_obs_total = np.zeros(num_samples)
+    T_rep_total = np.zeros(num_samples)
+
+    for batch in all_batches:
+        # Get predictive samples for this batch
+        return_sites = []
+        if target in ("responses", "both"):
+            return_sites.extend(["logit_y", "y"])
+        if target in ("counts", "both"):
+            return_sites.extend(["f_p", "f_t", "mu_t", "phi_t", "log_mu_p", "phi_p"])
+
+        predictive = Predictive(
+            model,
+            guide=guide,
+            num_samples=num_samples,
+            return_sites=return_sites,
+            parallel=False,
+        )
+        samples = predictive(batch)
+
+        if target in ("responses", "both"):
+            y_obs = batch.responses  # (B,)
+            logits = samples["logit_y"]  # (S, B)
+            p = torch.sigmoid(logits).clamp(1e-6, 1 - 1e-6)
+            y_rep = samples["y"]
+            var_p = p * (1 - p)
+            T_obs_batch = ((y_obs.unsqueeze(0) - p) ** 2 / var_p).sum(dim=-1)
+            T_rep_batch = ((y_rep - p) ** 2 / var_p).sum(dim=-1)
+            T_obs_total += T_obs_batch.cpu().numpy()
+            T_rep_total += T_rep_batch.cpu().numpy()
+
+        if target in ("counts", "both"):
+            # Chi-squared on count data using Pearson residuals
+            # For pre-treatment counts
+            pre_obs = batch.pre_counts  # (B, C, G)
+            f_p_rep = samples["f_p"]  # (S, B, C, G)
+            log_mu_p = samples["log_mu_p"]  # (S, B, C, G)
+            mu_p = torch.exp(log_mu_p)
+            phi_p = samples["phi_p"]  # (S, B, C, G)
+            # Variance of NB is mu + mu^2/phi
+            var_p_counts = mu_p + mu_p**2 / phi_p.clamp_min(1e-6)
+            var_p_counts = var_p_counts.clamp_min(1e-6)
+
+            T_obs_pre = ((pre_obs.unsqueeze(0) - mu_p) ** 2 / var_p_counts).sum(dim=(-1, -2, -3))
+            T_rep_pre = ((f_p_rep - mu_p) ** 2 / var_p_counts).sum(dim=(-1, -2, -3))
+
+            # For on-treatment counts
+            on_obs = batch.on_counts  # (B, C, G)
+            f_t_rep = samples["f_t"]  # (S, B, C, G)
+            mu_t = samples["mu_t"]  # (S, B, C, G)
+            phi_t = samples["phi_t"]  # (S, B, C, G)
+            var_t_counts = mu_t + mu_t**2 / phi_t.clamp_min(1e-6)
+            var_t_counts = var_t_counts.clamp_min(1e-6)
+
+            T_obs_on = ((on_obs.unsqueeze(0) - mu_t) ** 2 / var_t_counts).sum(dim=(-1, -2, -3))
+            T_rep_on = ((f_t_rep - mu_t) ** 2 / var_t_counts).sum(dim=(-1, -2, -3))
+
+            T_obs_total += (T_obs_pre + T_obs_on).cpu().numpy()
+            T_rep_total += (T_rep_pre + T_rep_on).cpu().numpy()
+
+    # p-value = proportion where T(y_rep) >= T(y_obs)
+    p_value = np.mean(T_rep_total >= T_obs_total)
+
+    return p_value, T_obs_total, T_rep_total
+
+
 class EarlyStopping:
     """
     Keeps track of when the loss does not improve after a given patience.
