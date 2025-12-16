@@ -104,7 +104,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     )
     beta_t = sample(
         "beta_t",
-        Normal(torch.zeros((C,), device=device), torch.full((C,), 2.0, device=device)).to_event(1),
+        Normal(torch.zeros((G,), device=device), torch.full((G,), 2.0, device=device)).to_event(1),
     )
     gamma = sample(
         "gamma",
@@ -195,6 +195,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             ).to_event(2),
             obs=batch.on_counts,
         )
+        q_t_mean = deterministic("q_t_mean", (pi_t.unsqueeze(-1) * mu_t_i).sum(dim=-2))
 
         u = sample(
             "u",
@@ -204,7 +205,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         logit_y = deterministic(
             "logit_y",
             beta0
-            + (pi_t * beta_t).sum(dim=-1)
+            + (q_t_mean * beta_t).sum(dim=-1)
             + (u * gamma).sum(dim=-1)
             + (beta_s * subtype_ids_ohe).sum(dim=-1),
         )

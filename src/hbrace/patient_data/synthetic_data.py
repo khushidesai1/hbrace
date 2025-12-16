@@ -143,14 +143,16 @@ class SimulatedDataGenerator:
         pre_counts = collapse_cells(pre_cells, pre_cell_types, C)
         on_counts = collapse_cells(post_cells, post_cell_types, C)
 
+        q_t_mean = np.einsum("nc,ncg->ng", pi_t, mu_t)
+
         # Patient response y_i via logistic regression on composition, u, and subtype.
         beta0 = rng.normal(0.0, 2.0)
-        beta_t = rng.normal(0.0, 2.0, size=C)
+        beta_t = rng.normal(0.0, 2.0, size=G)
         gamma = rng.normal(0.0, 2.0, size=r)
         beta_s = rng.normal(0.0, 2.0, size=S)
         linear = (
             beta0
-            + (pi_t * beta_t[None, :]).sum(axis=1)
+            + (q_t_mean * beta_t[None, :]).sum(axis=1)
             + (u * gamma[None, :]).sum(axis=1)
             + beta_s[subtype_ids]
         )

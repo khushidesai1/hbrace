@@ -1,4 +1,4 @@
-run_name: "remove_T_diag"
+run_name: "q_t_mean"
 data:
   num_patients: 128
   test_fraction: 0.25
