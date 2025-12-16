@@ -22,6 +22,7 @@ generator = SimulatedDataGenerator.from_model_config(
     model_config=model_config,
     n_patients=data_config.num_patients,
     seed=data_config.seed,
+    data_config=data_config,
 )
 if not os.path.exists(data_path):
     print(f"Generating data and saving to {data_path}")

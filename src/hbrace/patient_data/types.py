@@ -53,6 +53,11 @@ class SimConfig:
     sigma_D: float = 0.5  # std for Delta_cg
     sigma_W: float = 0.5  # std for W_P
     sigma_eps: float = 0.1  # std for epsilon_i in eta^t
+    beta_t_active_frac: float = 0.1  # fraction of genes truly predictive
+    beta_t_active_scale: float = 2.0  # std for active gene coefficients
+    beta_t_inactive_loc: float = 0.0  # mean for inactive gene coefficients
+    beta_t_inactive_scale: float = 0.0  # std for inactive gene coefficients
+    response_base_rate: float = 0.3  # baseline response rate
     seed: int = 0
 
 

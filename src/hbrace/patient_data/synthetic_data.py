@@ -7,7 +7,7 @@ import json
 import numpy as np
 import torch
 
-from hbrace.config import ModelConfig
+from hbrace.config import DataConfig, ModelConfig
 from hbrace.patient_data.types import PatientBatch, SimulatedData
 from hbrace.patient_data.types import SimConfig
 from hbrace.patient_data.utils import clr, inv_clr, sample_nb, collapse_cells
@@ -31,6 +31,7 @@ class SimulatedDataGenerator:
         model_config: ModelConfig,
         n_patients: int,
         seed: int | None = None,
+        data_config: DataConfig | None = None,
     ) -> "SimulatedDataGenerator":
         """
         Create a SimulatedDataGenerator from a ModelConfig.
@@ -39,7 +40,12 @@ class SimulatedDataGenerator:
             model_config: The ModelConfig to use for the simulation.
             n_patients: The number of patients to simulate.
             seed: The seed to use for the random number generator.
+            data_config: Optional DataConfig to override n_patients/seed and sparsity knobs.
         """
+        if data_config is not None:
+            n_patients = data_config.num_patients
+            seed = data_config.seed
+
         sim_config = SimConfig(
             n_patients=n_patients,
             n_subtypes=model_config.n_subtypes,
@@ -47,6 +53,11 @@ class SimulatedDataGenerator:
             n_genes=model_config.n_genes,
             d_z=model_config.z_dim,
             r_u=model_config.u_dim,
+            beta_t_active_frac=data_config.beta_t_active_frac if data_config is not None else SimConfig.beta_t_active_frac,
+            beta_t_active_scale=data_config.beta_t_active_scale if data_config is not None else SimConfig.beta_t_active_scale,
+            beta_t_inactive_loc=data_config.beta_t_inactive_loc if data_config is not None else SimConfig.beta_t_inactive_loc,
+            beta_t_inactive_scale=data_config.beta_t_inactive_scale if data_config is not None else SimConfig.beta_t_inactive_scale,
+            response_base_rate=data_config.response_base_rate if data_config is not None else SimConfig.response_base_rate,
             seed=seed if seed is not None else SimConfig.seed,
         )
         return cls(sim_config)
@@ -146,16 +157,31 @@ class SimulatedDataGenerator:
         q_t_mean = np.einsum("nc,ncg->ng", pi_t, mu_t)
 
         # Patient response y_i via logistic regression on composition, u, and subtype.
-        beta0 = rng.normal(0.0, 2.0)
-        beta_t = rng.normal(0.0, 2.0, size=G)
-        gamma = rng.normal(0.0, 2.0, size=r)
-        beta_s = rng.normal(0.0, 2.0, size=S)
+        frac_active = np.clip(self.sim_config.beta_t_active_frac, 0.0, 1.0)
+        beta_t_mask = (
+            rng.binomial(1, frac_active, size=G) if frac_active < 1.0 else np.ones(G, dtype=int)
+        )
+        if beta_t_mask.sum() == 0 and frac_active > 0.0:
+            beta_t_mask[rng.integers(low=0, high=G)] = 1
+        beta_t_active = rng.normal(0.0, self.sim_config.beta_t_active_scale, size=G)
+        beta_t_inactive = rng.normal(
+            self.sim_config.beta_t_inactive_loc,
+            self.sim_config.beta_t_inactive_scale,
+            size=G,
+        )
+        beta_t = beta_t_active * beta_t_mask + beta_t_inactive * (1 - beta_t_mask)
+        gamma = rng.normal(0.0, self.sim_config.beta_t_active_scale, size=r)
+        beta_s = rng.normal(0.0, self.sim_config.beta_t_active_scale, size=S)
+
         linear = (
-            beta0
-            + (q_t_mean * beta_t[None, :]).sum(axis=1)
+            (q_t_mean * beta_t[None, :]).sum(axis=1)
             + (u * gamma[None, :]).sum(axis=1)
             + beta_s[subtype_ids]
         )
+        base = np.clip(self.sim_config.response_base_rate, 1e-4, 1 - 1e-4)
+        beta0 = np.log(base / (1 - base)) - linear.mean()
+        linear = beta0 + linear
+        linear = np.clip(linear, -20, 20)
         prob = 1.0 / (1.0 + np.exp(-linear))
         responses = rng.binomial(1, prob, size=N)
 
@@ -176,6 +202,7 @@ class SimulatedDataGenerator:
             "delta_ic": delta_ic,
             "beta0": beta0,
             "beta_t": beta_t,
+            "beta_t_mask": beta_t_mask,
             "gamma": gamma,
             "beta_s": beta_s,
             "pre_cell_types": pre_cell_types,
