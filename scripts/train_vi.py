@@ -85,6 +85,7 @@ if not os.path.exists(checkpoint_path):
     plt.title("Training progress (ELBO)")
     plt.legend()
     plt.savefig(f"results/{run_name}/elbo_curve.png")
+    plt.savefig(f"results/{run_name}/elbo_curve.svg")
 
     if val_nll_history:
         plt.figure()
@@ -94,7 +95,7 @@ if not os.path.exists(checkpoint_path):
         plt.title("Validation NLL")
         plt.legend()
         plt.savefig(f"results/{run_name}/val_nll_curve.png")
-
+        plt.savefig(f"results/{run_name}/val_nll_curve.svg")
     model.save_checkpoint(checkpoint_path)
 else:
     print(f"Loading checkpoint from {checkpoint_path}")

@@ -1,9 +1,9 @@
-run_name: "500_sparse"
+run_name: "500_sparse2"
 data:
   num_patients: 128
   test_fraction: 0.25
   batch_size: 8
-  seed: 88
+  seed: 91
   device: cpu
   beta_t_active_frac: 0.3
   beta_t_active_scale: 2.0
@@ -19,8 +19,8 @@ model:
   nb_dispersion_prior: 2.0
   nb_dispersion_rate: 1.0
 vi:
-  early_stopping_patience: 25
-  learning_rate: 0.001
+  early_stopping_patience: 40
+  learning_rate: 0.0008
   num_epochs: 500
   log_interval: 100
   guide: auto_normal
