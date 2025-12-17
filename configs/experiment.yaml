@@ -7,7 +7,7 @@ data:
   seed: 88
   test_fraction: 0.25
 model:
-  beta_t_l1_strength: 0.05
+  beta_t_l1_strength: 0.1
   n_cell_types: 8
   n_genes: 1000
   n_subtypes: 3
@@ -17,7 +17,7 @@ model:
   subtype_rate: 0.1
   u_dim: 8
   z_dim: 8
-run_name: sweep_beta_t_0.05
+run_name: sweep_beta_t_0.1
 vi:
   early_stopping_patience: 25
   guide: auto_normal
