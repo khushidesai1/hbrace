@@ -143,11 +143,17 @@ class HBRACEModel:
         pyro.get_param_store().save(str(path))
 
     def load_checkpoint(self, path: str | Path, map_location: Optional[str] = None) -> None:
-        """
-        Load Pyro parameters from disk. Call after constructing the model/guide.
+        path = Path(path)
 
-        Args:
-            path: File produced by save_checkpoint.
-            map_location: Optional device mapping for tensors (e.g., 'cpu').
-        """
-        pyro.get_param_store().load(str(Path(path)), map_location=map_location)
+        _orig_torch_load = torch.load
+
+        def _torch_load_force_full(*args, **kwargs):
+            kwargs.setdefault("weights_only", False)
+            return _orig_torch_load(*args, **kwargs)
+
+        torch.load = _torch_load_force_full
+        try:
+            pyro.get_param_store().load(str(path), map_location=map_location)
+        finally:
+            torch.load = _orig_torch_load
+
