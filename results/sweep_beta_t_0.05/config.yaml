@@ -1,0 +1,30 @@
+data:
+  batch_size: 8
+  beta_t_active_frac: 0.1
+  beta_t_active_scale: 2.0
+  device: cpu
+  logit_std_target: 1.0
+  num_patients: 128
+  response_base_rate: 0.3
+  seed: 88
+  test_fraction: 0.25
+model:
+  beta_t_l1_strength: 0.05
+  n_cell_types: 8
+  n_genes: 1000
+  n_subtypes: 3
+  nb_dispersion_prior: 2.0
+  nb_dispersion_rate: 1.0
+  subtype_concentration: 2.0
+  subtype_rate: 0.1
+  u_dim: 8
+  z_dim: 8
+run_name: sweep_beta_t_0.05
+vi:
+  early_stopping_patience: 25
+  guide: auto_normal
+  guide_rank: null
+  learning_rate: 0.001
+  log_interval: 100
+  num_epochs: 300
+  seed: 0

@@ -1,0 +1,15 @@
+- auprc: null
+  beta_t_l1_strength: 0.01
+  success: false
+- auprc: null
+  beta_t_l1_strength: 0.05
+  success: false
+- auprc: null
+  beta_t_l1_strength: 0.1
+  success: false
+- auprc: null
+  beta_t_l1_strength: 0.2
+  success: false
+- auprc: null
+  beta_t_l1_strength: 0.5
+  success: false
