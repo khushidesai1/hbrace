@@ -55,8 +55,6 @@ class SimulatedDataGenerator:
             r_u=model_config.u_dim,
             beta_t_active_frac=data_config.beta_t_active_frac if data_config is not None else SimConfig.beta_t_active_frac,
             beta_t_active_scale=data_config.beta_t_active_scale if data_config is not None else SimConfig.beta_t_active_scale,
-            beta_t_inactive_loc=data_config.beta_t_inactive_loc if data_config is not None else SimConfig.beta_t_inactive_loc,
-            beta_t_inactive_scale=data_config.beta_t_inactive_scale if data_config is not None else SimConfig.beta_t_inactive_scale,
             response_base_rate=data_config.response_base_rate if data_config is not None else SimConfig.response_base_rate,
             seed=seed if seed is not None else SimConfig.seed,
         )
@@ -158,18 +156,9 @@ class SimulatedDataGenerator:
 
         # Patient response y_i via logistic regression on composition, u, and subtype.
         frac_active = np.clip(self.sim_config.beta_t_active_frac, 0.0, 1.0)
-        beta_t_mask = (
-            rng.binomial(1, frac_active, size=G) if frac_active < 1.0 else np.ones(G, dtype=int)
-        )
-        if beta_t_mask.sum() == 0 and frac_active > 0.0:
-            beta_t_mask[rng.integers(low=0, high=G)] = 1
-        beta_t_active = rng.normal(0.0, self.sim_config.beta_t_active_scale, size=G)
-        beta_t_inactive = rng.normal(
-            self.sim_config.beta_t_inactive_loc,
-            self.sim_config.beta_t_inactive_scale,
-            size=G,
-        )
-        beta_t = beta_t_active * beta_t_mask + beta_t_inactive * (1 - beta_t_mask)
+        # Softer sparsity: shrink the scale rather than hard-masking genes.
+        scale = self.sim_config.beta_t_active_scale * max(frac_active, 1e-3)
+        beta_t = rng.laplace(0.0, scale, size=G)
         gamma = rng.normal(0.0, self.sim_config.beta_t_active_scale, size=r)
         beta_s = rng.normal(0.0, self.sim_config.beta_t_active_scale, size=S)
 
@@ -202,7 +191,6 @@ class SimulatedDataGenerator:
             "delta_ic": delta_ic,
             "beta0": beta0,
             "beta_t": beta_t,
-            "beta_t_mask": beta_t_mask,
             "gamma": gamma,
             "beta_s": beta_s,
             "pre_cell_types": pre_cell_types,

@@ -5,20 +5,19 @@ data:
   batch_size: 8
   seed: 88
   device: cpu
-  beta_t_active_frac: 0.1
+  beta_t_active_frac: 0.3
+  beta_t_active_scale: 2.0
 model:
   n_subtypes: 3
   n_cell_types: 8
   n_genes: 500
   z_dim: 8
   u_dim: 8
+  beta_t_l1_strength: 0.1
   subtype_concentration: 2.0
   subtype_rate: 0.1
   nb_dispersion_prior: 2.0
   nb_dispersion_rate: 1.0
-  beta_t_l1_strength: 0.0
-  beta_t_gate_alpha: 0.5
-  beta_t_gate_beta: 2.0
 vi:
   early_stopping_patience: 25
   learning_rate: 0.0005

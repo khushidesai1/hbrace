@@ -16,8 +16,6 @@ class ModelConfig:
     z_dim: int = 4  # dimension for latent z_i treatment effect
     u_dim: int = 5  # dimension for latent u_i confounder
     beta_t_l1_strength: float = 0.0  # strength of L1 sparsity penalty on beta_t
-    beta_t_gate_alpha: float = 0.5  # Beta prior alpha for beta_t gate (smaller favors sparsity)
-    beta_t_gate_beta: float = 2.0   # Beta prior beta for beta_t gate (larger favors sparsity)
     subtype_concentration: float = 2.0  # Gamma(shape, rate) ~ (2, 0.1) in proposal
     subtype_rate: float = 0.1
     nb_dispersion_prior: float = 2.0
@@ -45,9 +43,7 @@ class DataConfig:
     seed: int = 0
     device: str = "cpu"
     beta_t_active_frac: float = 0.1  # fraction of genes truly predictive in synthetic data
-    beta_t_active_scale: float = 0.5  # std for active gene coefficients in synthetic data
-    beta_t_inactive_loc: float = 0.0  # mean for inactive gene coefficients in synthetic data
-    beta_t_inactive_scale: float = 0.0  # std for inactive gene coefficients in synthetic data
+    beta_t_active_scale: float = 2.0  # base scale for beta_t coefficients in synthetic data
     response_base_rate: float = 0.3  # target baseline response rate in synthetic data
     logit_std_target: float = 1.0  # target std for logits before sigmoid in synthetic data
 

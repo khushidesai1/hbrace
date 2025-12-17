@@ -106,17 +106,9 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "beta_t",
         Normal(torch.zeros((G,), device=device), torch.full((G,), 2.0, device=device)).to_event(1),
     )
-    beta_t_gate = sample(
-        "beta_t_gate",
-        Beta(
-            torch.full((G,), config.beta_t_gate_alpha, device=device),
-            torch.full((G,), config.beta_t_gate_beta, device=device),
-        ).to_event(1),
-    )
-    beta_t_sparse = beta_t * beta_t_gate
     if config.beta_t_l1_strength > 0:
         # L1 penalty encourages sparsity in gene-level treatment effects.
-        factor("beta_t_sparsity", -config.beta_t_l1_strength * beta_t_sparse.abs().sum())
+        factor("beta_t_sparsity", -config.beta_t_l1_strength * beta_t.abs().sum())
     gamma = sample(
         "gamma",
         Normal(torch.zeros((r_u,), device=device), torch.full((r_u,), 2.0, device=device)).to_event(1),
@@ -216,7 +208,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         logit_y = deterministic(
             "logit_y",
             beta0
-            + (q_t_mean * beta_t_sparse).sum(dim=-1)
+            + (q_t_mean * beta_t).sum(dim=-1)
             + (u * gamma).sum(dim=-1)
             + (beta_s * subtype_ids_ohe).sum(dim=-1),
         )
