@@ -1,0 +1,11 @@
+Loading synthetic data...
+Loading trained model...
+
+Evaluating predictive posterior...
+n=64: train NLL=28141.20, val NLL=27873.49
+n=128: train NLL=28090.99, val NLL=27854.88
+n=256: train NLL=28098.29, val NLL=27832.47
+Average validation NLL: 27853.61 +/- 16.77
+Average training NLL: 28110.16 +/- 22.15
+Generalization gap: -256.55 +/- 14.47
+AUPRC on validation responses: 0.295
