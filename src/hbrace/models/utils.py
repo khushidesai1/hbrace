@@ -45,7 +45,7 @@ def predictive_log_likelihood(
                 obs_count += batch.responses.shape[0]
                 guide_trace = poutine.trace(guide).get_trace(batch)
                 model_trace = poutine.trace(
-                    poutine.replay(model, trace=guide_trace)
+                    poutine.condition(poutine.replay(model, trace=guide_trace), data={"y": None})
                 ).get_trace(batch)
                 total_log_prob += model_trace.log_prob_sum() - guide_trace.log_prob_sum()
 
@@ -89,7 +89,16 @@ def auprc_for_responses(
             return_sites=("logit_y",),
             parallel=False,
         )
-        samples = predictive(batch)
+        # Drop labels so predictive samples are truly conditional on latents only.
+        batch_no_y = batch.to(device)
+        batch_no_y = batch_no_y.__class__(
+            pre_counts=batch_no_y.pre_counts,
+            on_counts=batch_no_y.on_counts,
+            cell_type_proportions=batch_no_y.cell_type_proportions,
+            responses=None,
+            subtype_ids=batch_no_y.subtype_ids,
+        )
+        samples = predictive(batch_no_y)
         probs = torch.sigmoid(samples["logit_y"])  # (S, B, ...)
         probs_mean = probs.mean(dim=0).reshape(-1)
         y_obs = batch.responses.reshape(-1)

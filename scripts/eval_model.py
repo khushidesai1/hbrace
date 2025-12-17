@@ -13,7 +13,7 @@ from hbrace.patient_data.dataset import get_train_test_dataloaders
 
 from hbrace.models.utils import auprc_for_responses, predictive_log_likelihood
 from hbrace.models.guides import build_guide
-from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import precision_recall_curve, f1_score, recall_score, precision_score, accuracy_score
 
 # %% Load the data and the model
 config_path = "configs/experiment.yaml"
@@ -76,6 +76,21 @@ auprc, y_true, y_score = auprc_for_responses(
     device=torch.device(data_config.device),
 )
 print(f"AUPRC on validation responses: {auprc:.3f}")
+
+print("Scores for patient responses:")
+print(y_score)
+
+f1_score = f1_score(y_true, y_score > 0.5, average='macro')
+print(f"F1 score on validation responses: {f1_score:.3f}")
+
+recall_score = recall_score(y_true, y_score > 0.5, average='macro')
+print(f"Recall score on validation responses: {recall_score:.3f}")
+
+precision_score = precision_score(y_true, y_score > 0.5, average='macro')
+print(f"Precision score on validation responses: {precision_score:.3f}")
+
+accuracy_score = accuracy_score(y_true, y_score > 0.5)
+print(f"Accuracy score on validation responses: {accuracy_score:.3f}")
 
 # %% Plot the PR curve
 precision, recall, thresholds = precision_recall_curve(y_true, y_score)

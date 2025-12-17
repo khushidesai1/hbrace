@@ -1,23 +1,25 @@
-run_name: "500_test"
 data:
-  num_patients: 128
-  test_fraction: 0.25
   batch_size: 8
-  seed: 88
   device: cpu
+  num_patients: 128
+  seed: 42
+  test_fraction: 0.25
 model:
+  n_cell_types: 5
+  n_genes: 50
   n_subtypes: 3
-  n_cell_types: 8
-  n_genes: 500
-  z_dim: 8
-  u_dim: 8
-  subtype_concentration: 2.0
-  subtype_rate: 0.1
   nb_dispersion_prior: 2.0
   nb_dispersion_rate: 1.0
+  subtype_concentration: 2.0
+  subtype_rate: 0.1
+  u_dim: 5
+  z_dim: 6
+run_name: q_t_mean
 vi:
   early_stopping_patience: 25
-  learning_rate: 0.001
-  num_epochs: 500
-  log_interval: 100
   guide: auto_normal
+  guide_rank: null
+  learning_rate: 0.003
+  log_interval: 100
+  num_epochs: 500
+  seed: 0
