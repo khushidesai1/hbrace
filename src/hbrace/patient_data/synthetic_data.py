@@ -56,6 +56,12 @@ class SimulatedDataGenerator:
             beta_t_active_frac=data_config.beta_t_active_frac if data_config is not None else SimConfig.beta_t_active_frac,
             beta_t_active_scale=data_config.beta_t_active_scale if data_config is not None else SimConfig.beta_t_active_scale,
             response_base_rate=data_config.response_base_rate if data_config is not None else SimConfig.response_base_rate,
+            logit_scale=data_config.logit_scale if data_config is not None else SimConfig.logit_scale,
+            beta0_loc=data_config.beta0_loc if data_config is not None else SimConfig.beta0_loc,
+            beta0_scale=data_config.beta0_scale if data_config is not None else SimConfig.beta0_scale,
+            gamma_scale=data_config.gamma_scale if data_config is not None else SimConfig.gamma_scale,
+            beta_s_scale=data_config.beta_s_scale if data_config is not None else SimConfig.beta_s_scale,
+            head_input_scale=data_config.head_input_scale if data_config is not None else SimConfig.head_input_scale,
             seed=seed if seed is not None else SimConfig.seed,
         )
         return cls(sim_config)
@@ -159,19 +165,21 @@ class SimulatedDataGenerator:
         # Softer sparsity: shrink the scale rather than hard-masking genes.
         scale = self.sim_config.beta_t_active_scale * max(frac_active, 1e-3)
         beta_t = rng.laplace(0.0, scale, size=G)
-        gamma = rng.normal(0.0, self.sim_config.beta_t_active_scale, size=r)
-        beta_s = rng.normal(0.0, self.sim_config.beta_t_active_scale, size=S)
+        gamma = rng.normal(0.0, self.sim_config.gamma_scale, size=r)
+        beta_s = rng.normal(0.0, self.sim_config.beta_s_scale, size=S)
 
-        linear = (
-            (q_t_mean * beta_t[None, :]).sum(axis=1)
-            + (u * gamma[None, :]).sum(axis=1)
+        beta0 = rng.normal(self.sim_config.beta0_loc, self.sim_config.beta0_scale)
+        q_t_scaled = q_t_mean * self.sim_config.head_input_scale
+        u_scaled = u * self.sim_config.head_input_scale
+        linear = beta0 + self.sim_config.logit_scale * (
+            (q_t_scaled * beta_t[None, :]).sum(axis=1)
+            + (u_scaled * gamma[None, :]).sum(axis=1)
             + beta_s[subtype_ids]
         )
-        base = np.clip(self.sim_config.response_base_rate, 1e-4, 1 - 1e-4)
-        beta0 = np.log(base / (1 - base)) - linear.mean()
-        linear = beta0 + linear
-        linear = np.clip(linear, -20, 20)
+        linear = np.clip(linear, -8, 8)
         prob = 1.0 / (1.0 + np.exp(-linear))
+        print("Checking base logits for the simulation itself")
+        print(prob)
         responses = rng.binomial(1, prob, size=N)
 
         extra_params: Dict[str, Any] = {

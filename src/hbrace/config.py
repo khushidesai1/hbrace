@@ -15,7 +15,13 @@ class ModelConfig:
     n_genes: int
     z_dim: int = 4  # dimension for latent z_i treatment effect
     u_dim: int = 5  # dimension for latent u_i confounder
-    beta_t_l1_strength: float = 0.0  # strength of L1 sparsity penalty on beta_t
+    beta_t_laplace_scale: float = 1.0  # scale of Laplace prior on beta_t
+    beta0_loc: float = -0.85  # prior mean for intercept (approx logit of base rate 0.3)
+    beta0_scale: float = 1.0  # prior std for intercept
+    logit_scale: float = 0.5  # scaling for response linear predictor
+    gamma_scale: float = 1.0  # std for gamma prior
+    beta_s_scale: float = 1.0  # std for beta_s prior
+    head_input_scale: float = 0.1  # scaling applied to q_t_mean and u in the head
     subtype_concentration: float = 2.0  # Gamma(shape, rate) ~ (2, 0.1) in proposal
     subtype_rate: float = 0.1
     nb_dispersion_prior: float = 2.0
@@ -43,9 +49,14 @@ class DataConfig:
     seed: int = 0
     device: str = "cpu"
     beta_t_active_frac: float = 0.1  # fraction of genes truly predictive in synthetic data
-    beta_t_active_scale: float = 2.0  # base scale for beta_t coefficients in synthetic data
+    beta_t_active_scale: float = 1.0  # base scale for beta_t coefficients in synthetic data
     response_base_rate: float = 0.3  # target baseline response rate in synthetic data
-    logit_std_target: float = 1.0  # target std for logits before sigmoid in synthetic data
+    logit_scale: float = 0.5  # scaling for response linear predictor in synthetic data
+    beta0_loc: float = -0.85  # mean for intercept in synthetic data
+    beta0_scale: float = 1.0  # std for intercept in synthetic data
+    gamma_scale: float = 1.0  # std for gamma in synthetic data
+    beta_s_scale: float = 1.0  # std for beta_s in synthetic data
+    head_input_scale: float = 0.1  # scaling applied to q_t_mean and u in synthetic data
 
 
 def _dict_to_config(obj: Dict[str, Any]) -> Tuple[ModelConfig, VIConfig, DataConfig]:

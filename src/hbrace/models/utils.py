@@ -44,9 +44,7 @@ def predictive_log_likelihood(
             for batch in dataloader:
                 obs_count += batch.responses.shape[0]
                 guide_trace = poutine.trace(guide).get_trace(batch)
-                model_trace = poutine.trace(
-                    poutine.condition(poutine.replay(model, trace=guide_trace), data={"y": None})
-                ).get_trace(batch)
+                model_trace = poutine.trace(poutine.replay(model, trace=guide_trace)).get_trace(batch)
                 total_log_prob += model_trace.log_prob_sum() - guide_trace.log_prob_sum()
 
             log_weights.append(total_log_prob)

@@ -100,22 +100,28 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
 
     beta0 = sample(
         "beta0",
-        Normal(torch.tensor(0.0, device=device), torch.tensor(2.0, device=device)),
+        Normal(
+            torch.tensor(config.beta0_loc, device=device),
+            torch.tensor(config.beta0_scale, device=device),
+        ),
     )
     beta_t = sample(
         "beta_t",
-        Normal(torch.zeros((G,), device=device), torch.full((G,), 2.0, device=device)).to_event(1),
+        Laplace(
+            torch.zeros((G,), device=device),
+            torch.full((G,), config.beta_t_laplace_scale, device=device),
+        ).to_event(1),
     )
-    if config.beta_t_l1_strength > 0:
-        # L1 penalty encourages sparsity in gene-level treatment effects.
-        factor("beta_t_sparsity", -config.beta_t_l1_strength * beta_t.abs().sum())
     gamma = sample(
         "gamma",
-        Normal(torch.zeros((r_u,), device=device), torch.full((r_u,), 2.0, device=device)).to_event(1),
+        Normal(torch.zeros((r_u,), device=device), torch.full((r_u,), config.gamma_scale, device=device)).to_event(1),
     )
     beta_s = sample(
         "beta_s",
-        Normal(torch.zeros((config.n_subtypes,), device=device), torch.full((config.n_subtypes,), 2.0, device=device)).to_event(1),
+        Normal(
+            torch.zeros((config.n_subtypes,), device=device),
+            torch.full((config.n_subtypes,), config.beta_s_scale, device=device),
+        ).to_event(1),
     )
 
     # Patient-level plate.
@@ -199,19 +205,20 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             obs=batch.on_counts,
         )
         q_t_mean = deterministic("q_t_mean", (pi_t.unsqueeze(-1) * mu_t_i).sum(dim=-2))
+        q_t_head = q_t_mean * config.head_input_scale
 
         u = sample(
             "u",
             Normal(torch.zeros(r_u, device=device), torch.ones(r_u, device=device)).to_event(1),
         )
+        u_head = u * config.head_input_scale
         subtype_ids_ohe = torch.nn.functional.one_hot(batch.subtype_ids, num_classes=config.n_subtypes)
-        logit_y = deterministic(
-            "logit_y",
-            beta0
-            + (q_t_mean * beta_t).sum(dim=-1)
-            + (u * gamma).sum(dim=-1)
-            + (beta_s * subtype_ids_ohe).sum(dim=-1),
+        linear = config.logit_scale * (
+            (q_t_head * beta_t).sum(dim=-1)
+            + (u_head * gamma).sum(dim=-1)
+            + (beta_s * subtype_ids_ohe).sum(dim=-1)
         )
+        logit_y = deterministic("logit_y", beta0 + linear)
         sample(
             "y",
             Bernoulli(logits=logit_y),

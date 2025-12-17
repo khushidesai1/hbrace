@@ -54,8 +54,14 @@ class SimConfig:
     sigma_W: float = 0.5  # std for W_P
     sigma_eps: float = 0.1  # std for epsilon_i in eta^t
     beta_t_active_frac: float = 0.1  # fraction proxy; scales beta_t magnitude (smaller -> more shrinkage)
-    beta_t_active_scale: float = 2.0  # base scale for beta_t coefficients
+    beta_t_active_scale: float = 1.0  # base scale for beta_t coefficients
     response_base_rate: float = 0.3  # baseline response rate
+    logit_scale: float = 0.5  # scaling for response linear predictor
+    beta0_loc: float = -0.85  # prior mean for intercept (approx logit of base rate 0.3)
+    beta0_scale: float = 1.0  # prior std for intercept
+    gamma_scale: float = 1.0  # std for gamma coefficients
+    beta_s_scale: float = 1.0  # std for beta_s coefficients
+    head_input_scale: float = 0.1  # scaling applied to q_t_mean and u in the head
     seed: int = 0
 
 

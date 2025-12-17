@@ -1,26 +1,41 @@
-run_name: "500_sparse2"
+run_name: 100_sparse_delta
 data:
-  num_patients: 128
-  test_fraction: 0.25
   batch_size: 8
-  seed: 91
-  device: cpu
   beta_t_active_frac: 0.3
-  beta_t_active_scale: 2.0
+  beta_t_active_scale: 1.0
+  device: cpu
+  logit_scale: 0.5
+  beta0_loc: -0.85
+  beta0_scale: 1.0
+  gamma_scale: 1.0
+  beta_s_scale: 1.0
+  head_input_scale: 0.1
+  num_patients: 128
+  response_base_rate: 0.3
+  seed: 88
+  test_fraction: 0.25
 model:
-  n_subtypes: 3
+  beta_t_laplace_scale: 1.0
+  logit_scale: 0.5
+  gamma_scale: 1.0
+  beta_s_scale: 1.0
+  beta0_loc: -0.85
+  beta0_scale: 1.0
+  head_input_scale: 0.1
   n_cell_types: 8
-  n_genes: 500
-  z_dim: 8
-  u_dim: 8
-  beta_t_l1_strength: 0.1
-  subtype_concentration: 2.0
-  subtype_rate: 0.1
+  n_genes: 100
+  n_subtypes: 3
   nb_dispersion_prior: 2.0
   nb_dispersion_rate: 1.0
+  subtype_concentration: 2.0
+  subtype_rate: 0.1
+  u_dim: 8
+  z_dim: 8
 vi:
-  early_stopping_patience: 40
-  learning_rate: 0.0008
-  num_epochs: 500
+  early_stopping_patience: 25
+  guide: auto_delta
+  guide_rank: null
+  learning_rate: 0.003
   log_interval: 100
-  guide: auto_normal
+  num_epochs: 300
+  seed: 0
