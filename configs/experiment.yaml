@@ -1,26 +1,26 @@
-run_name: "500_sparse"
 data:
-  num_patients: 128
-  test_fraction: 0.25
   batch_size: 8
-  seed: 88
-  device: cpu
-  beta_t_active_frac: 0.3
+  beta_t_active_frac: 0.1
   beta_t_active_scale: 2.0
+  device: cpu
+  num_patients: 128
+  seed: 88
+  test_fraction: 0.25
 model:
-  n_subtypes: 3
+  beta_t_l1_strength: 0.05
   n_cell_types: 8
-  n_genes: 500
-  z_dim: 8
-  u_dim: 8
-  beta_t_l1_strength: 0.1
-  subtype_concentration: 2.0
-  subtype_rate: 0.1
+  n_genes: 1000
+  n_subtypes: 3
   nb_dispersion_prior: 2.0
   nb_dispersion_rate: 1.0
+  subtype_concentration: 2.0
+  subtype_rate: 0.1
+  u_dim: 8
+  z_dim: 8
+run_name: sweep_beta_t_0.05
 vi:
   early_stopping_patience: 25
-  learning_rate: 0.0005
-  num_epochs: 500
-  log_interval: 100
   guide: auto_normal
+  learning_rate: 0.001
+  log_interval: 100
+  num_epochs: 300
