@@ -122,27 +122,31 @@ def sample_q_t(
         return torch.cat(all_samples, dim=1)  # dim=1 is patient dimension
 
 
-def compute_true_q_t(sim_data: SimulatedData) -> np.ndarray:
-    """Compute true q_t from simulated data parameters.
+def compute_observed_q_t(sim_data: SimulatedData) -> np.ndarray:
+    """Compute observed q_t from observed data.
+
+    In the HBRACE model, q_t is the composition-weighted on-treatment expression:
+        q_t[i,g] = Σ_c pi_t[i,c] * mu_t[i,c,g]
+
+    Since:
+    - f_t[i,c,g] are observed mean counts per cell type (≈ mu_t[i,c,g])
+    - pi_t[i,c] are observed from cell type assignments
+
+    We can compute observed q_t as:
+        q_t_obs[i,g] = Σ_c pi_t[i,c] * f_t[i,c,g]
 
     Args:
-        sim_data: SimulatedData object with extra_params containing true values.
+        sim_data: SimulatedData object with observed counts and proportions.
 
     Returns:
-        True q_t of shape (N, G).
+        Observed q_t of shape (N, G), computed from actual data.
     """
-    if sim_data.extra_params is None or "mu_t" not in sim_data.extra_params:
-        raise ValueError(
-            "SimulatedData must have extra_params with 'mu_t' and 'pi_t' "
-            "to compute true q_t. Regenerate data with save=True."
-        )
+    pi_t = sim_data.pi_t  # (N, C) - observed cell type proportions
+    f_t = sim_data.on_counts  # (N, C, G) - observed mean counts ≈ mu_t
 
-    pi_t = sim_data.pi_t  # (N, C)
-    mu_t = sim_data.extra_params["mu_t"]  # (N, C, G)
-
-    # q_t = sum_c pi_t[:, c] * mu_t[:, c, :]
-    q_t_true = np.einsum("nc,ncg->ng", pi_t, mu_t)
-    return q_t_true
+    # q_t = sum_c pi_t[:, c] * f_t[:, c, :]
+    q_t_observed = np.einsum("nc,ncg->ng", pi_t, f_t)
+    return q_t_observed
 
 
 def ppc_metrics(
@@ -243,9 +247,9 @@ def evaluate_q_t_reconstruction(
     # Sample q_t from posterior
     q_t_predicted = sample_q_t(model, batch, num_samples=num_samples, batch_size=batch_size)
 
-    # Compute true q_t
+    # Compute observed q_t
     if indices is None:
-        q_t_true = compute_true_q_t(sim_data)
+        q_t_observed = compute_observed_q_t(sim_data)
     else:
         # Compute for subset of patients
         sim_data_subset = SimulatedData(
@@ -261,13 +265,13 @@ def evaluate_q_t_reconstruction(
             extra_params={k: v[indices] if isinstance(v, np.ndarray) and v.shape[0] == len(sim_data.responses)
                          else v for k, v in sim_data.extra_params.items()} if sim_data.extra_params else None,
         )
-        q_t_true = compute_true_q_t(sim_data_subset)
+        q_t_observed = compute_observed_q_t(sim_data_subset)
 
     # Compute metrics
-    global_metrics = ppc_metrics(q_t_predicted, q_t_true, per_patient=False)
-    per_patient_metrics = ppc_metrics(q_t_predicted, q_t_true, per_patient=True)
+    global_metrics = ppc_metrics(q_t_predicted, q_t_observed, per_patient=False)
+    per_patient_metrics = ppc_metrics(q_t_predicted, q_t_observed, per_patient=True)
 
-    return global_metrics, per_patient_metrics, q_t_predicted, q_t_true
+    return global_metrics, per_patient_metrics, q_t_predicted, q_t_observed
 
 
 def sample_responses(
@@ -484,15 +488,15 @@ def posterior_predictive_check_q_t(
 
     Returns:
         Dictionary containing:
-            - observed_statistic: T(y_obs)
-            - replicated_statistics: T(y_rep) for each sample, shape (num_samples,)
+            - observed_statistic: T(q_t_obs)
+            - replicated_statistics: T(q_t_rep) for each sample, shape (num_samples,)
             - p_value: Bayesian p-value
-            - q_t_observed: Observed q_t (from true parameters)
+            - q_t_observed: Observed q_t (computed from data)
             - q_t_replicated: Replicated q_t samples, shape (num_samples, N, G)
     """
-    # Get true q_t as "observed"
+    # Get observed q_t (computed from data)
     if indices is None:
-        q_t_observed = compute_true_q_t(sim_data)
+        q_t_observed = compute_observed_q_t(sim_data)
     else:
         sim_data_subset = SimulatedData(
             config=sim_data.config,
@@ -507,7 +511,7 @@ def posterior_predictive_check_q_t(
             extra_params={k: v[indices] if isinstance(v, np.ndarray) and v.shape[0] == len(sim_data.responses)
                          else v for k, v in sim_data.extra_params.items()} if sim_data.extra_params else None,
         )
-        q_t_observed = compute_true_q_t(sim_data_subset)
+        q_t_observed = compute_observed_q_t(sim_data_subset)
 
     # Sample q_t from posterior predictive
     batch = sim_data.to_patient_batch(device=device, indices=indices)
@@ -567,9 +571,9 @@ def posterior_predictive_check_summary_stats(
     Returns:
         Dictionary with observed and replicated summary statistics.
     """
-    # Get observed q_t
+    # Get observed q_t (computed from data)
     if indices is None:
-        q_t_observed = compute_true_q_t(sim_data)
+        q_t_observed = compute_observed_q_t(sim_data)
     else:
         sim_data_subset = SimulatedData(
             config=sim_data.config,
@@ -584,7 +588,7 @@ def posterior_predictive_check_summary_stats(
             extra_params={k: v[indices] if isinstance(v, np.ndarray) and v.shape[0] == len(sim_data.responses)
                          else v for k, v in sim_data.extra_params.items()} if sim_data.extra_params else None,
         )
-        q_t_observed = compute_true_q_t(sim_data_subset)
+        q_t_observed = compute_observed_q_t(sim_data_subset)
 
     # Sample q_t from posterior predictive
     batch = sim_data.to_patient_batch(device=device, indices=indices)
