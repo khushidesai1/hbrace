@@ -96,8 +96,8 @@ class SimulatedDataGenerator:
             bump[subtype % C] = 5.0
             theta[subtype] = rng.dirichlet(base_conc * np.ones(C) + bump)
 
-        # Pre-treatment mixture pi_i^p with tau_i ~ Gamma(2, 0.2).
-        tau = rng.gamma(shape=2.0, scale=0.2, size=N)
+        # Pre-treatment mixture pi_i^p with tau_i ~ Gamma(2, 1.0) for more balanced compositions.
+        tau = rng.gamma(shape=2.0, scale=1.0, size=N)  # Mean = 2.0 (was 0.4)
         pi_p = np.zeros((N, C))
         for i in range(N):
             pi_p[i] = rng.dirichlet(tau[i] * theta[subtype_ids[i]])
@@ -129,7 +129,8 @@ class SimulatedDataGenerator:
         delta_ic = rng.normal(loc=0.0, scale=tau_c[None, :], size=(N, C))
 
         # Composition shift: linear vs. product of experts (PoE)
-        lambda_T = rng.beta(a=2.0, b=5.0)
+        # Increased lambda_T for larger composition shifts
+        lambda_T = rng.beta(a=self.sim_config.lambda_T_shape, b=self.sim_config.lambda_T_rate)
         T = rng.laplace(loc=0.0, scale=lambda_T, size=(C, C))
         # np.fill_diagonal(T, 0.0)
         W_P = rng.normal(loc=0.0, scale=self.sim_config.sigma_W, size=(C, d))

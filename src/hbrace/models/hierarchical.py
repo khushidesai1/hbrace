@@ -80,21 +80,21 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
 
     # Cell-type proportion shifts for on-treatment mixture weights.
     if config.gene_sparsity:
-        # Sparsity version: simplified fixed scale
+        # Sparsity version: simplified fixed scale (moderate for stability)
         W = sample(
             "W",
             Normal(
                 torch.zeros((C, d_z), device=device),
-                torch.full((C, d_z), 0.5, device=device),
+                torch.full((C, d_z), 1.0, device=device),  # Moderate value balanced with less sparse compositions
             ).to_event(2),
         )
     else:
-        # Original version: hierarchical prior
+        # Original version: hierarchical prior (moderate for stability)
         W_std = sample(
             "W_std",
             Gamma(
                 torch.full((C, d_z), 2.0, device=device),
-                torch.full((C, d_z), 4.0, device=device),  # rate=4.0, mean=0.5
+                torch.full((C, d_z), 2.0, device=device),  # rate=2.0, mean=1.0
             ).to_event(2),
         )
         W = sample(
@@ -105,13 +105,13 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "epsilon_std",
         Gamma(
             torch.full((C,), 2.0, device=device),  # shape
-            torch.full((C,), 20.0, device=device),  # rate -> mean 0.1
+            torch.full((C,), 25.0, device=device),  # rate -> mean 0.08 (moderate noise)
         ).to_event(1),
     )
 
     lambda_T = sample(
         "lambda_T",
-        Beta(torch.tensor(2.0, device=device), torch.tensor(5.0, device=device)),
+        Beta(torch.tensor(3.0, device=device), torch.tensor(4.0, device=device)),  # Moderate mean ~0.43
     )
     T = sample(
         "T",
@@ -164,7 +164,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
                 "V",
                 Normal(
                     torch.zeros((C, r_u), device=device),
-                    torch.full((C, r_u), 0.5, device=device),
+                    torch.full((C, r_u), 1.0, device=device),  # Moderate increase from 0.5 for stability
                 ).to_event(2),
             )
         else:
@@ -172,7 +172,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
                 "V_std",
                 Gamma(
                     torch.full((C, r_u), 2.0, device=device),
-                    torch.full((C, r_u), 4.0, device=device),
+                    torch.full((C, r_u), 2.0, device=device),  # rate=2.0, mean=1.0
                 ).to_event(2),
             )
             V = sample(
@@ -184,7 +184,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     with plate("patients", n_patients):
         tau_i_p = sample(
             "tau_i_p",
-            Gamma(torch.tensor(2.0, device=device), torch.tensor(5.0, device=device)),
+            Gamma(torch.tensor(2.0, device=device), torch.tensor(1.0, device=device)),  # rate=1.0 -> mean=2.0 (was rate=5.0 -> mean=0.4)
         )
         pi_p = sample(
             "pi_p",
