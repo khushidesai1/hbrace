@@ -116,6 +116,8 @@ plt.scatter(recall[optimal_idx], precision[optimal_idx], color='red', s=100,
 plt.xlabel("Recall", fontsize=12)
 plt.ylabel("Precision", fontsize=12)
 plt.title("Precision-Recall Curve", fontsize=14)
+plt.xlim(0, 1)
+plt.ylim(0, 1)
 plt.legend(fontsize=10)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()

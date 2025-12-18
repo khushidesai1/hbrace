@@ -1,27 +1,26 @@
-run_name: 100_sparse_normal
 data:
   batch_size: 8
+  beta0_loc: -0.85
+  beta0_scale: 1.0
+  beta_s_scale: 1.0
   beta_t_active_frac: 0.3
   beta_t_active_scale: 1.0
   device: cpu
-  logit_scale: 0.5
-  beta0_loc: -0.85
-  beta0_scale: 1.0
   gamma_scale: 1.0
-  beta_s_scale: 1.0
   head_input_scale: 0.1
+  logit_scale: 0.5
   num_patients: 128
   response_base_rate: 0.3
   seed: 88
   test_fraction: 0.25
 model:
-  beta_t_laplace_scale: 0.3  # matches data generation: beta_t_active_scale * beta_t_active_frac = 1.0 * 0.3
-  logit_scale: 0.5
-  gamma_scale: 1.0
-  beta_s_scale: 1.0
   beta0_loc: -0.85
   beta0_scale: 1.0
+  beta_s_scale: 1.0
+  beta_t_laplace_scale: 0.3
+  gamma_scale: 1.0
   head_input_scale: 0.1
+  logit_scale: 0.5
   n_cell_types: 8
   n_genes: 100
   n_subtypes: 3
@@ -31,13 +30,14 @@ model:
   subtype_rate: 0.1
   u_dim: 8
   z_dim: 8
+run_name: 100_sparse_lowrank
 vi:
+  delta_warmup_epochs: 0
+  delta_warmup_lr: null
   early_stopping_patience: 25
-  guide: auto_delta
-  guide_rank: null
-  learning_rate: 0.003
-  # delta_warmup_lr: 0.003
-  # delta_warmup_epochs: 50
+  guide: auto_lowrank
+  guide_rank: 8
+  learning_rate: 0.002
   log_interval: 100
   num_epochs: 500
   seed: 0
