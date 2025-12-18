@@ -4,7 +4,7 @@ from .hbrace_model import HBRACEModel
 from .hierarchical import hierarchical_model
 from .ppc import (
     sample_q_t,
-    compute_true_q_t,
+    compute_observed_q_t,
     ppc_metrics,
     evaluate_q_t_reconstruction,
     sample_responses,
@@ -19,7 +19,7 @@ __all__ = [
     "HBRACEModel",
     "hierarchical_model",
     "sample_q_t",
-    "compute_true_q_t",
+    "compute_observed_q_t",
     "ppc_metrics",
     "evaluate_q_t_reconstruction",
     "sample_responses",
