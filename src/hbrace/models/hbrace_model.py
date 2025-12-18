@@ -62,6 +62,25 @@ class HBRACEModel:
             patience=float(self.vi_config.early_stopping_patience),
         )
 
+        # Optional AutoDelta warm-up before switching to the main guide.
+        if self.vi_config.delta_warmup_epochs > 0 and self.vi_config.guide.lower() != "auto_delta":
+            warmup_guide = build_guide(
+                self.model_fn,
+                self.model_config,
+                "auto_delta",
+                rank=self.vi_config.guide_rank,
+            )
+            warmup_lr = (
+                self.vi_config.delta_warmup_lr
+                if self.vi_config.delta_warmup_lr is not None
+                else self.vi_config.learning_rate
+            )
+            warmup_optimizer = ClippedAdam({"lr": warmup_lr})
+            warmup_svi = SVI(self.model_fn, warmup_guide, warmup_optimizer, loss=Trace_ELBO())
+            for epoch in range(self.vi_config.delta_warmup_epochs):
+                for batch in dataloader_train:
+                    warmup_svi.step(batch)
+
         self.guide_fn = build_guide(
             self.model_fn,
             self.model_config,

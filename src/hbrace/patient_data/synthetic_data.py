@@ -7,7 +7,7 @@ import json
 import numpy as np
 import torch
 
-from hbrace.config import ModelConfig
+from hbrace.config import DataConfig, ModelConfig
 from hbrace.patient_data.types import PatientBatch, SimulatedData
 from hbrace.patient_data.types import SimConfig
 from hbrace.patient_data.utils import clr, inv_clr, sample_nb, collapse_cells
@@ -31,6 +31,7 @@ class SimulatedDataGenerator:
         model_config: ModelConfig,
         n_patients: int,
         seed: int | None = None,
+        data_config: DataConfig | None = None,
     ) -> "SimulatedDataGenerator":
         """
         Create a SimulatedDataGenerator from a ModelConfig.
@@ -39,7 +40,12 @@ class SimulatedDataGenerator:
             model_config: The ModelConfig to use for the simulation.
             n_patients: The number of patients to simulate.
             seed: The seed to use for the random number generator.
+            data_config: Optional DataConfig to override n_patients/seed and sparsity knobs.
         """
+        if data_config is not None:
+            n_patients = data_config.num_patients
+            seed = data_config.seed
+
         sim_config = SimConfig(
             n_patients=n_patients,
             n_subtypes=model_config.n_subtypes,
@@ -47,6 +53,16 @@ class SimulatedDataGenerator:
             n_genes=model_config.n_genes,
             d_z=model_config.z_dim,
             r_u=model_config.u_dim,
+            gene_sparsity=data_config.gene_sparsity if data_config is not None else model_config.gene_sparsity,
+            beta_t_active_frac=data_config.beta_t_active_frac if data_config is not None else SimConfig.beta_t_active_frac,
+            beta_t_active_scale=data_config.beta_t_active_scale if data_config is not None else SimConfig.beta_t_active_scale,
+            response_base_rate=data_config.response_base_rate if data_config is not None else SimConfig.response_base_rate,
+            logit_scale=data_config.logit_scale if data_config is not None else SimConfig.logit_scale,
+            beta0_loc=data_config.beta0_loc if data_config is not None else SimConfig.beta0_loc,
+            beta0_scale=data_config.beta0_scale if data_config is not None else SimConfig.beta0_scale,
+            gamma_scale=data_config.gamma_scale if data_config is not None else SimConfig.gamma_scale,
+            beta_s_scale=data_config.beta_s_scale if data_config is not None else SimConfig.beta_s_scale,
+            head_input_scale=data_config.head_input_scale if data_config is not None else SimConfig.head_input_scale,
             seed=seed if seed is not None else SimConfig.seed,
         )
         return cls(sim_config)
@@ -86,7 +102,12 @@ class SimulatedDataGenerator:
             pi_p[i] = rng.dirichlet(tau[i] * theta[subtype_ids[i]])
 
         # Base NB parameters for pre-treatment f^p_c(x).
-        log_mu_p = rng.normal(loc=1.0, scale=0.5, size=(N, C, G))
+        if self.sim_config.gene_sparsity:
+            # Sparsity version: tighter prior
+            log_mu_p = rng.normal(loc=1.0, scale=0.5, size=(N, C, G))
+        else:
+            # Original version: looser prior
+            log_mu_p = rng.normal(loc=1.5, scale=0.8, size=(N, C, G))
         mu_p = np.exp(log_mu_p)
         phi_p_std = rng.gamma(shape=2.0, scale=0.5, size=(N, C, G))  # mean 1 / rate=2
         phi_p = rng.gamma(shape=phi_p_std, scale=1.0)
@@ -96,7 +117,12 @@ class SimulatedDataGenerator:
         u = rng.normal(loc=0.0, scale=1.0, size=(N, r))
 
         # Phenotypic shifts for on-treatment counts.
-        Delta_std = rng.gamma(shape=2.0, scale=0.2, size=(C, G, d))
+        if self.sim_config.gene_sparsity:
+            # Sparsity version: scale=0.2 (rate=5)
+            Delta_std = rng.gamma(shape=2.0, scale=0.2, size=(C, G, d))
+        else:
+            # Original version: scale=0.5 (rate=2)
+            Delta_std = rng.gamma(shape=2.0, scale=0.5, size=(C, G, d))
         Delta = rng.normal(loc=0.0, scale=Delta_std, size=(C, G, d))
         tau_c = np.abs(rng.normal(loc=0.0, scale=0.5, size=C)) + 1e-3
         delta_ic = rng.normal(loc=0.0, scale=tau_c[None, :], size=(N, C))
@@ -146,17 +172,29 @@ class SimulatedDataGenerator:
         q_t_mean = np.einsum("nc,ncg->ng", pi_t, mu_t)
 
         # Patient response y_i via logistic regression on composition, u, and subtype.
-        beta0 = rng.normal(0.0, 2.0)
-        beta_t = rng.normal(0.0, 2.0, size=G)
-        gamma = rng.normal(0.0, 2.0, size=r)
-        beta_s = rng.normal(0.0, 2.0, size=S)
-        linear = (
-            beta0
-            + (q_t_mean * beta_t[None, :]).sum(axis=1)
-            + (u * gamma[None, :]).sum(axis=1)
+        if self.sim_config.gene_sparsity:
+            # Sparsity version: Laplace distribution
+            frac_active = np.clip(self.sim_config.beta_t_active_frac, 0.0, 1.0)
+            scale = self.sim_config.beta_t_active_scale * max(frac_active, 1e-3)
+            beta_t = rng.laplace(0.0, scale, size=G)
+        else:
+            # Original version: Normal distribution
+            beta_t = rng.normal(0.0, 2.0, size=G)
+        gamma = rng.normal(0.0, self.sim_config.gamma_scale, size=r)
+        beta_s = rng.normal(0.0, self.sim_config.beta_s_scale, size=S)
+
+        beta0 = rng.normal(self.sim_config.beta0_loc, self.sim_config.beta0_scale)
+        q_t_scaled = q_t_mean * self.sim_config.head_input_scale
+        u_scaled = u * self.sim_config.head_input_scale
+        linear = beta0 + self.sim_config.logit_scale * (
+            (q_t_scaled * beta_t[None, :]).sum(axis=1)
+            + (u_scaled * gamma[None, :]).sum(axis=1)
             + beta_s[subtype_ids]
         )
+        linear = np.clip(linear, -8, 8)
         prob = 1.0 / (1.0 + np.exp(-linear))
+        print("Checking base logits for the simulation itself")
+        print(prob)
         responses = rng.binomial(1, prob, size=N)
 
         extra_params: Dict[str, Any] = {

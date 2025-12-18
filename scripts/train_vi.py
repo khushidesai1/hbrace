@@ -22,6 +22,7 @@ generator = SimulatedDataGenerator.from_model_config(
     model_config=model_config,
     n_patients=data_config.num_patients,
     seed=data_config.seed,
+    data_config=data_config,
 )
 if not os.path.exists(data_path):
     print(f"Generating data and saving to {data_path}")
@@ -31,21 +32,22 @@ if not os.path.exists(data_path):
         save=True, 
         name=data_path.split("/")[-1]
     )
-    # Save the config to the results/{run_name}/config.yaml
-    os.makedirs(f"results/{run_name}", exist_ok=True)
-    with open(f"results/{run_name}/config.yaml", "w") as f:
-        yaml.dump(
-            {
-                "run_name": run_name,
-                "model": model_config.__dict__,
-                "vi": vi_config.__dict__,
-                "data": data_config.__dict__,
-            },
-            f,
-        )
 else:
     print(f"Loading data from {data_path}")
     sim_data = SimulatedDataGenerator.load(data_path)
+
+# Save the config to the results/{run_name}/config.yaml
+os.makedirs(f"results/{run_name}", exist_ok=True)
+with open(f"results/{run_name}/config.yaml", "w") as f:
+    yaml.dump(
+        {
+            "run_name": run_name,
+            "model": model_config.__dict__,
+            "vi": vi_config.__dict__,
+            "data": data_config.__dict__,
+        },
+        f,
+    )
 
 # %% Create train/test split at the patient level
 model = HBRACEModel(model_config, vi_config)
@@ -61,6 +63,7 @@ if not os.path.exists(checkpoint_path):
         sim_data=sim_data,
         test_fraction=data_config.test_fraction,
         seed=data_config.seed,
+        oversample=True,
     )
 
     training_history = model.train(
@@ -84,6 +87,7 @@ if not os.path.exists(checkpoint_path):
     plt.title("Training progress (ELBO)")
     plt.legend()
     plt.savefig(f"results/{run_name}/elbo_curve.png")
+    plt.savefig(f"results/{run_name}/elbo_curve.svg")
 
     if val_nll_history:
         plt.figure()
@@ -93,7 +97,7 @@ if not os.path.exists(checkpoint_path):
         plt.title("Validation NLL")
         plt.legend()
         plt.savefig(f"results/{run_name}/val_nll_curve.png")
-
+        plt.savefig(f"results/{run_name}/val_nll_curve.svg")
     model.save_checkpoint(checkpoint_path)
 else:
     print(f"Loading checkpoint from {checkpoint_path}")

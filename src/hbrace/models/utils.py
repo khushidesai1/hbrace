@@ -109,7 +109,6 @@ def auprc_for_responses(
     y_score = np.concatenate(y_score_list)
     return average_precision_score(y_true, y_score), y_true, y_score
 
-
 class EarlyStopping:
     """
     Keeps track of when the loss does not improve after a given patience.

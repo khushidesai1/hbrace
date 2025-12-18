@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import torch
-from pyro import deterministic, param, plate, sample
+from pyro import deterministic, factor, param, plate, sample
 from pyro.distributions import (
     Beta,
     Bernoulli,
@@ -51,13 +51,24 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     theta_expanded = theta[batch.subtype_ids]
 
     # Mean and dispersion shifts for on-treatment distributions.
-    Delta_std = sample(
-        "Delta_std",
-        Gamma(
-            torch.full((C, G, d_z), 2.0, device=device),
-            torch.full((C, G, d_z), 2.0, device=device),
-        ).to_event(3),
-    )
+    if config.gene_sparsity:
+        # Sparsity version: tighter prior
+        Delta_std = sample(
+            "Delta_std",
+            Gamma(
+                torch.full((C, G, d_z), 2.0, device=device),
+                torch.full((C, G, d_z), 5.0, device=device),  # rate=5.0, mean=0.4
+            ).to_event(3),
+        )
+    else:
+        # Original version: looser prior
+        Delta_std = sample(
+            "Delta_std",
+            Gamma(
+                torch.full((C, G, d_z), 2.0, device=device),
+                torch.full((C, G, d_z), 2.0, device=device),  # rate=2.0, mean=1.0
+            ).to_event(3),
+        )
     Delta = sample("Delta", Normal(torch.zeros((C, G, d_z), device=device), Delta_std).to_event(3))
     delta_std = sample(
         "delta_std",
@@ -68,17 +79,28 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     )
 
     # Cell-type proportion shifts for on-treatment mixture weights.
-    W_std = sample(
-        "W_std",
-        Gamma(
-            torch.full((C, d_z), 2.0, device=device),  # shape
-            torch.full((C, d_z), 4.0, device=device),  # rate -> mean 0.5
-        ).to_event(2),
-    )
-    W = sample(
-        "W",
-        Normal(torch.zeros((C, d_z), device=device), W_std).to_event(2),
-    )
+    if config.gene_sparsity:
+        # Sparsity version: simplified fixed scale
+        W = sample(
+            "W",
+            Normal(
+                torch.zeros((C, d_z), device=device),
+                torch.full((C, d_z), 0.5, device=device),
+            ).to_event(2),
+        )
+    else:
+        # Original version: hierarchical prior
+        W_std = sample(
+            "W_std",
+            Gamma(
+                torch.full((C, d_z), 2.0, device=device),
+                torch.full((C, d_z), 4.0, device=device),  # rate=4.0, mean=0.5
+            ).to_event(2),
+        )
+        W = sample(
+            "W",
+            Normal(torch.zeros((C, d_z), device=device), W_std).to_event(2),
+        )
     epsilon_std = sample(
         "epsilon_std",
         Gamma(
@@ -100,19 +122,39 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
 
     beta0 = sample(
         "beta0",
-        Normal(torch.tensor(0.0, device=device), torch.tensor(2.0, device=device)),
+        Normal(
+            torch.tensor(config.beta0_loc, device=device),
+            torch.tensor(config.beta0_scale, device=device),
+        ),
     )
-    beta_t = sample(
-        "beta_t",
-        Normal(torch.zeros((G,), device=device), torch.full((G,), 2.0, device=device)).to_event(1),
-    )
+    if config.gene_sparsity:
+        # Sparsity version: Laplace prior for sparsity
+        beta_t = sample(
+            "beta_t",
+            Laplace(
+                torch.zeros((G,), device=device),
+                torch.full((G,), config.beta_t_laplace_scale, device=device),
+            ).to_event(1),
+        )
+    else:
+        # Original version: Normal prior (no sparsity)
+        beta_t = sample(
+            "beta_t",
+            Normal(
+                torch.zeros((G,), device=device),
+                torch.full((G,), 2.0, device=device),
+            ).to_event(1),
+        )
     gamma = sample(
         "gamma",
-        Normal(torch.zeros((r_u,), device=device), torch.full((r_u,), 2.0, device=device)).to_event(1),
+        Normal(torch.zeros((r_u,), device=device), torch.full((r_u,), config.gamma_scale, device=device)).to_event(1),
     )
     beta_s = sample(
         "beta_s",
-        Normal(torch.zeros((config.n_subtypes,), device=device), torch.full((config.n_subtypes,), 2.0, device=device)).to_event(1),
+        Normal(
+            torch.zeros((config.n_subtypes,), device=device),
+            torch.full((config.n_subtypes,), config.beta_s_scale, device=device),
+        ).to_event(1),
     )
 
     # Patient-level plate.
@@ -126,13 +168,24 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             Dirichlet(tau_i_p.unsqueeze(-1) * theta_expanded.clamp_min(1e-6)),
         )
 
-        log_mu_p = sample(
-            "log_mu_p",
-            Normal(
-                torch.full((C, G), 1.5, device=device),
-                torch.full((C, G), 0.8, device=device),
-            ).to_event(2),
-        )
+        if config.gene_sparsity:
+            # Sparsity version: tighter prior
+            log_mu_p = sample(
+                "log_mu_p",
+                Normal(
+                    torch.full((C, G), 1.0, device=device),
+                    torch.full((C, G), 0.5, device=device),
+                ).to_event(2),
+            )
+        else:
+            # Original version: looser prior
+            log_mu_p = sample(
+                "log_mu_p",
+                Normal(
+                    torch.full((C, G), 1.5, device=device),
+                    torch.full((C, G), 0.8, device=device),
+                ).to_event(2),
+            )
         mu_p = torch.exp(log_mu_p)
 
         phi_p_std = sample(
@@ -196,19 +249,20 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             obs=batch.on_counts,
         )
         q_t_mean = deterministic("q_t_mean", (pi_t.unsqueeze(-1) * mu_t_i).sum(dim=-2))
+        q_t_head = q_t_mean * config.head_input_scale
 
         u = sample(
             "u",
             Normal(torch.zeros(r_u, device=device), torch.ones(r_u, device=device)).to_event(1),
         )
+        u_head = u * config.head_input_scale
         subtype_ids_ohe = torch.nn.functional.one_hot(batch.subtype_ids, num_classes=config.n_subtypes)
-        logit_y = deterministic(
-            "logit_y",
-            beta0
-            + (q_t_mean * beta_t).sum(dim=-1)
-            + (u * gamma).sum(dim=-1)
-            + (beta_s * subtype_ids_ohe).sum(dim=-1),
+        linear = config.logit_scale * (
+            (q_t_head * beta_t).sum(dim=-1)
+            + (u_head * gamma).sum(dim=-1)
+            + (beta_s * subtype_ids_ohe).sum(dim=-1)
         )
+        logit_y = deterministic("logit_y", beta0 + linear)
         sample(
             "y",
             Bernoulli(logits=logit_y),
