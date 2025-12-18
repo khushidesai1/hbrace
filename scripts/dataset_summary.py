@@ -7,10 +7,12 @@ from hbrace.patient_data import SimulatedDataGenerator
 
 # Set style
 sns.set_style("whitegrid")
-plt.rcParams['figure.dpi'] = 150
+plt.rcParams["figure.dpi"] = 150
 
 # %% Load config and synthetic data
-run_name, model_config, vi_config, data_config = load_config("results/best_model_even_bigger_shift/config.yaml")
+run_name, model_config, vi_config, data_config = load_config(
+    "results/model_1000_genes/config.yaml"
+)
 sim_data = SimulatedDataGenerator.load(f"./data/synthetic_data_{run_name}")
 
 subtypes = np.asarray(sim_data.subtype_ids)
@@ -22,13 +24,13 @@ print("Subtype counts:", {s: int((subtypes == s).sum()) for s in range(model_con
 num_responders = (sim_data.responses == 1).sum()
 num_non_responders = (sim_data.responses == 0).sum()
 print(f"Number of responders: {num_responders}, Number of non-responders: {num_non_responders}")
-print(f"Responder rate: {num_responders / (num_responders + num_non_responders)}")
+print(f"Responder rate: {num_responders / (num_responders + num_non_responders):.4f}")
 
 # Create output directory
 os.makedirs(f"results/{run_name}", exist_ok=True)
 
 # %% Mixture variability (pi_p, pi_t)
-def summarize_mixtures(name, mat):
+def summarize_mixtures(mat):
     # mat: (N, C)
     per_subtype = []
     for s in range(model_config.n_subtypes):
@@ -45,12 +47,13 @@ def summarize_mixtures(name, mat):
         )
     return per_subtype
 
+
 print("\nPre-treatment mixtures (pi_p) mean/std per subtype:")
-for row in summarize_mixtures("pi_p", sim_data.pi_p):
+for row in summarize_mixtures(sim_data.pi_p):
     print(f"  subtype {row['subtype']}: mean {row['mean']}, std {row['std']}")
 
 print("\nPost-treatment mixtures (pi_t) mean/std per subtype:")
-for row in summarize_mixtures("pi_t", sim_data.pi_t):
+for row in summarize_mixtures(sim_data.pi_t):
     print(f"  subtype {row['subtype']}: mean {row['mean']}, std {row['std']}")
 
 # %% Counts variability (pre/on)
@@ -68,7 +71,20 @@ for label, arr in [("pre", pre_counts), ("post", on_counts)]:
 
 # %% Latent parameter spreads if saved
 extra = sim_data.extra_params or {}
-for key in ["Delta_std", "Delta", "lambda_T", "W_P", "V", "delta_ic", "z", "u", "beta0", "beta_t", "gamma", "beta_s"]:
+for key in [
+    "Delta_std",
+    "Delta",
+    "lambda_T",
+    "W_P",
+    "V",
+    "delta_ic",
+    "z",
+    "u",
+    "beta0",
+    "beta_t",
+    "gamma",
+    "beta_s",
+]:
     if key in extra:
         arr = np.asarray(extra[key])
         if arr is not None:
@@ -76,124 +92,87 @@ for key in ["Delta_std", "Delta", "lambda_T", "W_P", "V", "delta_ic", "z", "u", 
         else:
             print(f"\n{key}: None (not used in this model)")
 
-# %% Visualize composition distributions by subtype
-print("Generating composition distribution plots...")
+# %% Stacked barplot: pre vs post compositions for all subtypes
+print("Generating stacked composition barplot...")
 
-# Create figure with subplots for each subtype
 n_subtypes = model_config.n_subtypes
-fig, axes = plt.subplots(n_subtypes, 2, figsize=(14, 4*n_subtypes))
-if n_subtypes == 1:
-    axes = axes.reshape(1, -1)
-
 cell_type_names = [f"CT{i}" for i in range(C)]
 
-for s in range(n_subtypes):
-    mask = subtypes == s
-    n_patients_subtype = mask.sum()
-
-    if n_patients_subtype == 0:
-        continue
-
-    # Pre-treatment compositions (pi_p)
-    ax_pre = axes[s, 0]
-    pi_p_subtype = sim_data.pi_p[mask]  # (n_patients_subtype, C)
-
-    # Box plot for pre-treatment
-    positions = np.arange(C)
-    bp_pre = ax_pre.boxplot([pi_p_subtype[:, c] for c in range(C)],
-                             positions=positions,
-                             widths=0.6,
-                             patch_artist=True,
-                             showmeans=True,
-                             meanprops=dict(marker='D', markerfacecolor='red', markersize=6))
-
-    for patch in bp_pre['boxes']:
-        patch.set_facecolor('lightblue')
-        patch.set_alpha(0.7)
-
-    ax_pre.set_xlabel('Cell Type', fontsize=12)
-    ax_pre.set_ylabel('Proportion', fontsize=12)
-    ax_pre.set_title(f'Pre-treatment (π_p) - Subtype {s} (n={n_patients_subtype})', fontsize=14, fontweight='bold')
-    ax_pre.set_xticks(positions)
-    ax_pre.set_xticklabels(cell_type_names, rotation=45)
-    ax_pre.set_ylim([0, 1])
-    ax_pre.grid(True, alpha=0.3, axis='y')
-
-    # On-treatment compositions (pi_t)
-    ax_post = axes[s, 1]
-    pi_t_subtype = sim_data.pi_t[mask]  # (n_patients_subtype, C)
-
-    # Box plot for on-treatment
-    bp_post = ax_post.boxplot([pi_t_subtype[:, c] for c in range(C)],
-                               positions=positions,
-                               widths=0.6,
-                               patch_artist=True,
-                               showmeans=True,
-                               meanprops=dict(marker='D', markerfacecolor='red', markersize=6))
-
-    for patch in bp_post['boxes']:
-        patch.set_facecolor('lightcoral')
-        patch.set_alpha(0.7)
-
-    ax_post.set_xlabel('Cell Type', fontsize=12)
-    ax_post.set_ylabel('Proportion', fontsize=12)
-    ax_post.set_title(f'On-treatment (π_t) - Subtype {s} (n={n_patients_subtype})', fontsize=14, fontweight='bold')
-    ax_post.set_xticks(positions)
-    ax_post.set_xticklabels(cell_type_names, rotation=45)
-    ax_post.set_ylim([0, 1])
-    ax_post.grid(True, alpha=0.3, axis='y')
-
-plt.tight_layout()
-plt.savefig(f"results/{run_name}/composition_distributions_by_subtype.png", dpi=150, bbox_inches='tight')
-plt.savefig(f"results/{run_name}/composition_distributions_by_subtype.pdf", bbox_inches='tight')
-print(f"\nSaved: results/{run_name}/composition_distributions_by_subtype.png")
-plt.close()
-
-# %% Create a comparison plot showing pre vs post changes by subtype
-fig, axes = plt.subplots(1, n_subtypes, figsize=(6*n_subtypes, 5))
-if n_subtypes == 1:
-    axes = [axes]
+# Compute mean compositions per subtype
+mean_pi_p_by_subtype = np.full((n_subtypes, C), np.nan, dtype=float)
+mean_pi_t_by_subtype = np.full((n_subtypes, C), np.nan, dtype=float)
+n_by_subtype = np.zeros(n_subtypes, dtype=int)
 
 for s in range(n_subtypes):
     mask = subtypes == s
-    n_patients_subtype = mask.sum()
-
-    if n_patients_subtype == 0:
+    n_s = int(mask.sum())
+    n_by_subtype[s] = n_s
+    if n_s == 0:
         continue
+    mean_pi_p_by_subtype[s] = sim_data.pi_p[mask].mean(axis=0)
+    mean_pi_t_by_subtype[s] = sim_data.pi_t[mask].mean(axis=0)
 
-    ax = axes[s]
+valid_subtypes = [s for s in range(n_subtypes) if n_by_subtype[s] > 0]
+k = len(valid_subtypes)
+if k == 0:
+    raise ValueError("No subtypes have any patients; cannot plot barplot.")
 
-    # Compute mean compositions
-    mean_pi_p = sim_data.pi_p[mask].mean(axis=0)
-    mean_pi_t = sim_data.pi_t[mask].mean(axis=0)
+# Create figure
+fig, ax = plt.subplots(figsize=(max(8, k * 1.5), 6))
 
-    x = np.arange(C)
-    width = 0.35
+# X positions for each (subtype, treatment) pair
+x_labels = []
+x_positions = []
+for idx, s in enumerate(valid_subtypes):
+    x_labels.append(f"Subtype {s}\nPre (n={n_by_subtype[s]})")
+    x_labels.append(f"Subtype {s}\nOn (n={n_by_subtype[s]})")
+    x_positions.extend([idx * 2, idx * 2 + 1])
 
-    bars1 = ax.bar(x - width/2, mean_pi_p, width, label='Pre-treatment (π_p)',
-                   color='lightblue', edgecolor='black', alpha=0.8)
-    bars2 = ax.bar(x + width/2, mean_pi_t, width, label='On-treatment (π_t)',
-                   color='lightcoral', edgecolor='black', alpha=0.8)
+x_positions = np.array(x_positions)
 
-    ax.set_xlabel('Cell Type', fontsize=12)
-    ax.set_ylabel('Mean Proportion', fontsize=12)
-    ax.set_title(f'Subtype {s} Composition Change\n(n={n_patients_subtype})', fontsize=14, fontweight='bold')
-    ax.set_xticks(x)
-    ax.set_xticklabels(cell_type_names, rotation=45)
-    ax.legend(fontsize=10)
-    ax.grid(True, alpha=0.3, axis='y')
-    ax.set_ylim([0, max(mean_pi_p.max(), mean_pi_t.max()) * 1.2])
+# Color palette for cell types
+colors = plt.cm.Set3(np.linspace(0, 1, C))
+
+# Stack cell type proportions
+bottoms = np.zeros(len(x_positions))
+for c in range(C):
+    heights = []
+    for s in valid_subtypes:
+        heights.append(mean_pi_p_by_subtype[s, c])
+        heights.append(mean_pi_t_by_subtype[s, c])
+
+    ax.bar(
+        x_positions,
+        heights,
+        bottom=bottoms,
+        width=0.8,
+        label=cell_type_names[c],
+        color=colors[c],
+        edgecolor='white',
+        linewidth=0.5
+    )
+    bottoms += heights
+
+ax.set_xlabel("Subtype and Treatment", fontsize=12, fontweight='bold')
+ax.set_ylabel("Cell Type Proportion", fontsize=12, fontweight='bold')
+ax.set_title("Cell Type Composition by Subtype (Pre vs On-treatment)", fontsize=14, fontweight="bold")
+ax.set_xticks(x_positions)
+ax.set_xticklabels(x_labels, rotation=0, ha='center', fontsize=10)
+ax.set_ylim([0, 1.0])
+ax.grid(True, alpha=0.3, axis="y")
+ax.legend(title="Cell Type", fontsize=9, ncol=1, bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0.0)
 
 plt.tight_layout()
-plt.savefig(f"results/{run_name}/composition_comparison_by_subtype.png", dpi=150, bbox_inches='tight')
-plt.savefig(f"results/{run_name}/composition_comparison_by_subtype.pdf", bbox_inches='tight')
-print(f"Saved: results/{run_name}/composition_comparison_by_subtype.png")
-plt.close()
-
-plt.tight_layout()
-plt.savefig(f"results/{run_name}/composition_heatmap_by_subtype.png", dpi=150, bbox_inches='tight')
-plt.savefig(f"results/{run_name}/composition_heatmap_by_subtype.pdf", bbox_inches='tight')
-print(f"Saved: results/{run_name}/composition_heatmap_by_subtype.png")
+plt.savefig(
+    f"results/{run_name}/composition_stacked_barplot.png",
+    dpi=150,
+    bbox_inches="tight",
+)
+plt.savefig(
+    f"results/{run_name}/composition_stacked_barplot.svg",
+    bbox_inches="tight",
+)
+print(f"Saved: results/{run_name}/composition_stacked_barplot.png")
 plt.close()
 
 print("Dataset summary complete!")
