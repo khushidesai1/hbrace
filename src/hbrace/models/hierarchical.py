@@ -80,21 +80,21 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
 
     # Cell-type proportion shifts for on-treatment mixture weights.
     if config.gene_sparsity:
-        # Sparsity version: simplified fixed scale
+        # Sparsity version: simplified fixed scale (moderate for stability)
         W = sample(
             "W",
             Normal(
                 torch.zeros((C, d_z), device=device),
-                torch.full((C, d_z), 0.5, device=device),
+                torch.full((C, d_z), 1.0, device=device),  # Moderate value balanced with less sparse compositions
             ).to_event(2),
         )
     else:
-        # Original version: hierarchical prior
+        # Original version: hierarchical prior (moderate for stability)
         W_std = sample(
             "W_std",
             Gamma(
                 torch.full((C, d_z), 2.0, device=device),
-                torch.full((C, d_z), 4.0, device=device),  # rate=4.0, mean=0.5
+                torch.full((C, d_z), 2.0, device=device),  # rate=2.0, mean=1.0
             ).to_event(2),
         )
         W = sample(
@@ -105,13 +105,13 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "epsilon_std",
         Gamma(
             torch.full((C,), 2.0, device=device),  # shape
-            torch.full((C,), 20.0, device=device),  # rate -> mean 0.1
+            torch.full((C,), 25.0, device=device),  # rate -> mean 0.08 (moderate noise)
         ).to_event(1),
     )
 
     lambda_T = sample(
         "lambda_T",
-        Beta(torch.tensor(2.0, device=device), torch.tensor(5.0, device=device)),
+        Beta(torch.tensor(3.0, device=device), torch.tensor(4.0, device=device)),  # Moderate mean ~0.43
     )
     T = sample(
         "T",
@@ -157,11 +157,34 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         ).to_event(1),
     )
 
+    # Sample V matrix for PoE model (must be outside patient plate!)
+    if config.composition_model == "poe":
+        if config.gene_sparsity:
+            V = sample(
+                "V",
+                Normal(
+                    torch.zeros((C, r_u), device=device),
+                    torch.full((C, r_u), 1.0, device=device),  # Moderate increase from 0.5 for stability
+                ).to_event(2),
+            )
+        else:
+            V_std = sample(
+                "V_std",
+                Gamma(
+                    torch.full((C, r_u), 2.0, device=device),
+                    torch.full((C, r_u), 2.0, device=device),  # rate=2.0, mean=1.0
+                ).to_event(2),
+            )
+            V = sample(
+                "V",
+                Normal(torch.zeros((C, r_u), device=device), V_std).to_event(2),
+            )
+
     # Patient-level plate.
     with plate("patients", n_patients):
         tau_i_p = sample(
             "tau_i_p",
-            Gamma(torch.tensor(2.0, device=device), torch.tensor(5.0, device=device)),
+            Gamma(torch.tensor(2.0, device=device), torch.tensor(1.0, device=device)),  # rate=1.0 -> mean=2.0 (was rate=5.0 -> mean=0.4)
         )
         pi_p = sample(
             "pi_p",
@@ -232,12 +255,48 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             Normal(torch.zeros(C, device=device), epsilon_std).to_event(1),
         )
 
+        # Sample u early (needed for PoE composition model)
+        u = sample(
+            "u",
+            Normal(torch.zeros(r_u, device=device), torch.ones(r_u, device=device)).to_event(1),
+        )
+
         eta_p = _clr(pi_p)
-        # Composition shift: z @ (T @ W)^T to match synthetic generation ordering.
-        TW = torch.einsum("...ct,...td->...cd", T, W)
-        eta_shift = torch.einsum("...nd,...cd->...nc", z, TW)
-        eta_t = deterministic("eta_t", eta_p + eta_shift + epsilon)
-        pi_t = deterministic("pi_t", _inv_clr(eta_t))
+
+        # Composition shift: linear vs. product of experts (PoE)
+        if config.composition_model == "linear":
+            # Linear model: eta^t = eta^p + z @ (T @ W)^T + epsilon
+            TW = torch.einsum("...ct,...td->...cd", T, W)
+            eta_shift = torch.einsum("...nd,...cd->...nc", z, TW)
+            eta_t = deterministic("eta_t", eta_p + eta_shift + epsilon)
+            pi_t = deterministic("pi_t", _inv_clr(eta_t))
+        elif config.composition_model == "poe":
+            # Product of Experts model
+            # V was sampled outside the patient plate
+
+            # Expert 1: treatment effect
+            TW = torch.einsum("...ct,...td->...cd", T, W)
+            eta_z = torch.einsum("...nd,...cd->...nc", z, TW)
+            g_z = _inv_clr(eta_z)  # treatment composition
+
+            # Expert 2: confounder effect
+            # u is (N, r_u), V is (C, r_u), we want (N, C)
+            # Transpose V: (C, r_u) -> (r_u, C)
+            V_transposed = V.transpose(-2, -1)  # (r_u, C)
+            eta_u = torch.matmul(u, V_transposed)  # (N, r_u) @ (r_u, C) = (N, C)
+            h_u = _inv_clr(eta_u)  # confounder composition
+
+            # Product of experts (multiply in probability space)
+            # All should be (N, C)
+            pi_t_unnorm = pi_p * g_z * h_u
+            pi_t_clean = pi_t_unnorm / pi_t_unnorm.sum(dim=-1, keepdim=True)
+
+            # Add noise in CLR space
+            eta_t_clean = _clr(pi_t_clean)
+            eta_t = deterministic("eta_t", eta_t_clean + epsilon)
+            pi_t = deterministic("pi_t", _inv_clr(eta_t))
+        else:
+            raise ValueError(f"Unknown composition_model: {config.composition_model}")
 
         logits_t = nb_logits(mu_t_i, phi_t)
         f_t = sample(
@@ -250,11 +309,6 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         )
         q_t_mean = deterministic("q_t_mean", (pi_t.unsqueeze(-1) * mu_t_i).sum(dim=-2))
         q_t_head = q_t_mean * config.head_input_scale
-
-        u = sample(
-            "u",
-            Normal(torch.zeros(r_u, device=device), torch.ones(r_u, device=device)).to_event(1),
-        )
         u_head = u * config.head_input_scale
         subtype_ids_ohe = torch.nn.functional.one_hot(batch.subtype_ids, num_classes=config.n_subtypes)
         linear = config.logit_scale * (

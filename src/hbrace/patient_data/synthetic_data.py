@@ -54,6 +54,7 @@ class SimulatedDataGenerator:
             d_z=model_config.z_dim,
             r_u=model_config.u_dim,
             gene_sparsity=data_config.gene_sparsity if data_config is not None else model_config.gene_sparsity,
+            composition_model=data_config.composition_model if data_config is not None else model_config.composition_model,
             beta_t_active_frac=data_config.beta_t_active_frac if data_config is not None else SimConfig.beta_t_active_frac,
             beta_t_active_scale=data_config.beta_t_active_scale if data_config is not None else SimConfig.beta_t_active_scale,
             response_base_rate=data_config.response_base_rate if data_config is not None else SimConfig.response_base_rate,
@@ -95,8 +96,8 @@ class SimulatedDataGenerator:
             bump[subtype % C] = 5.0
             theta[subtype] = rng.dirichlet(base_conc * np.ones(C) + bump)
 
-        # Pre-treatment mixture pi_i^p with tau_i ~ Gamma(2, 0.2).
-        tau = rng.gamma(shape=2.0, scale=0.2, size=N)
+        # Pre-treatment mixture pi_i^p with tau_i ~ Gamma(2, 1.0) for more balanced compositions.
+        tau = rng.gamma(shape=2.0, scale=1.0, size=N)  # Mean = 2.0 (was 0.4)
         pi_p = np.zeros((N, C))
         for i in range(N):
             pi_p[i] = rng.dirichlet(tau[i] * theta[subtype_ids[i]])
@@ -127,16 +128,49 @@ class SimulatedDataGenerator:
         tau_c = np.abs(rng.normal(loc=0.0, scale=0.5, size=C)) + 1e-3
         delta_ic = rng.normal(loc=0.0, scale=tau_c[None, :], size=(N, C))
 
-        # Composition shift eta^t_i = eta^p_i + T W_P z_i + epsilon_i.
-        lambda_T = rng.beta(a=2.0, b=5.0)
+        # Composition shift: linear vs. product of experts (PoE)
+        # Increased lambda_T for larger composition shifts
+        lambda_T = rng.beta(a=self.sim_config.lambda_T_shape, b=self.sim_config.lambda_T_rate)
         T = rng.laplace(loc=0.0, scale=lambda_T, size=(C, C))
         # np.fill_diagonal(T, 0.0)
         W_P = rng.normal(loc=0.0, scale=self.sim_config.sigma_W, size=(C, d))
 
         eta_p = clr(pi_p)
         eps = rng.normal(loc=0.0, scale=self.sim_config.sigma_eps, size=(N, C))
-        eta_t = eta_p + (z @ (T @ W_P).T) + eps
-        pi_t = inv_clr(eta_t)
+
+        if self.sim_config.composition_model == "linear":
+            # Linear model: eta^t_i = eta^p_i + T W_P z_i + epsilon_i
+            eta_t = eta_p + (z @ (T @ W_P).T) + eps
+            pi_t = inv_clr(eta_t)
+            V = None  # not used in linear model
+        elif self.sim_config.composition_model == "poe":
+            # Product of Experts model
+            # Expert 1: treatment effect g(z) = softmax(z @ (T @ W)^T)
+            # Expert 2: confounder effect h(u) = softmax(u @ V^T)
+            # pi_t ∝ pi_p × g(z) × h(u)
+            V = rng.normal(loc=0.0, scale=self.sim_config.sigma_V, size=(C, r))
+
+            # z is (N, d), W_P is (C, d), T is (C, C)
+            eta_z = z @ (T @ W_P).T  # (N, d) @ (d, C) = (N, C)
+
+            # u is (N, r), V is (C, r)
+            eta_u = u @ V.T  # (N, r) @ (r, C) = (N, C)
+
+            # Convert to probabilities (softmax)
+            g_z = inv_clr(eta_z)  # (N, C) treatment composition
+            h_u = inv_clr(eta_u)  # (N, C) confounder composition
+
+            # Product of experts (multiply in probability space)
+            # All are (N, C)
+            pi_t_unnorm = pi_p * g_z * h_u  # element-wise product, (N, C)
+            pi_t = pi_t_unnorm / pi_t_unnorm.sum(axis=1, keepdims=True)  # normalize to (N, C)
+
+            # Add noise in CLR space
+            eta_t = clr(pi_t) + eps  # (N, C) + (N, C)
+            pi_t = inv_clr(eta_t)  # (N, C)
+        else:
+            raise ValueError(f"Unknown composition_model: {self.sim_config.composition_model}")
+
 
         # On-treatment NB params mu^t_icg, phi^t_ic.
         dot_Dz = np.einsum("nd,cgd->ncg", z, Delta)  # (N, C, G)
@@ -209,6 +243,7 @@ class SimulatedDataGenerator:
             "tau": tau,
             "T": T,
             "W_P": W_P,
+            "V": V,  # only non-None for PoE model
             "Delta": Delta,
             "Delta_std": Delta_std,
             "delta_ic": delta_ic,

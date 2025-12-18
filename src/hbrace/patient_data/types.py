@@ -51,16 +51,20 @@ class SimConfig:
     d_z: int = 3  # dim of treatment effect z_i
     r_u: int = 2  # dim of confounder u_i
     gene_sparsity: bool = True  # if True, use Laplace for beta_t; if False, use Normal(0, 2.0)
+    composition_model: str = "linear"  # "linear" or "poe" (product of experts)
     sigma_D: float = 0.5  # std for Delta_cg
-    sigma_W: float = 0.5  # std for W_P
-    sigma_eps: float = 0.1  # std for epsilon_i in eta^t
+    sigma_W: float = 1.0  # std for W_P (treatment -> composition) - moderate value balanced with less sparse compositions
+    sigma_V: float = 1.0  # std for V (confounder -> composition; only used if composition_model="poe")
+    sigma_eps: float = 0.08  # std for epsilon_i in eta^t - moderate noise for stability
+    lambda_T_shape: float = 3.0  # Beta(shape, rate) for lambda_T scale - moderate mean ~0.43
+    lambda_T_rate: float = 4.0  # Beta(shape, rate) for lambda_T scale
     beta_t_active_frac: float = 0.1  # fraction proxy; scales beta_t magnitude (smaller -> more shrinkage; only used if gene_sparsity=True)
     beta_t_active_scale: float = 1.0  # base scale for beta_t coefficients (only used if gene_sparsity=True)
     response_base_rate: float = 0.3  # baseline response rate
     logit_scale: float = 0.5  # scaling for response linear predictor
     beta0_loc: float = -0.85  # prior mean for intercept (approx logit of base rate 0.3)
     beta0_scale: float = 1.0  # prior std for intercept
-    gamma_scale: float = 1.0  # std for gamma coefficients
+    gamma_scale: float = 1.5  # std for gamma coefficients
     beta_s_scale: float = 1.0  # std for beta_s coefficients
     head_input_scale: float = 0.1  # scaling applied to q_t_mean and u in the head
     seed: int = 0
