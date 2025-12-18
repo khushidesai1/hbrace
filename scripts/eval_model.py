@@ -78,12 +78,6 @@ auprc, y_true, y_score = auprc_for_responses(
 )
 print(f"AUPRC on validation responses: {auprc:.3f}")
 
-print("\nPredicted probability statistics:")
-print(f"  Min:  {y_score.min():.4f}")
-print(f"  Max:  {y_score.max():.4f}")
-print(f"  Mean: {y_score.mean():.4f}")
-print(f"  Std:  {y_score.std():.4f}")
-
 # %% Find optimal threshold from precision-recall curve
 precision, recall, thresholds = precision_recall_curve(y_true, y_score)
 
@@ -103,10 +97,10 @@ precision_optimal = precision_score(y_true, y_pred_optimal, average='macro', zer
 accuracy_optimal = accuracy_score(y_true, y_pred_optimal)
 
 print(f"\nMetrics with optimal threshold ({optimal_threshold:.4f}):")
-print(f"  F1 score: {f1_optimal:.3f}")
-print(f"  Recall: {recall_optimal:.3f}")
-print(f"  Precision: {precision_optimal:.3f}")
-print(f"  Accuracy: {accuracy_optimal:.3f}")
+print(f"F1 score: {f1_optimal:.3f}")
+print(f"Recall: {recall_optimal:.3f}")
+print(f"Precision: {precision_optimal:.3f}")
+print(f"Accuracy: {accuracy_optimal:.3f}")
 
 # %% Plot the PR curve with optimal threshold marked
 plt.figure(figsize=(10, 6))
