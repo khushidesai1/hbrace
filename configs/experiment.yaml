@@ -7,6 +7,7 @@ data:
   beta_t_active_scale: 1.0
   device: cpu
   gamma_scale: 1.0
+  gene_sparsity: true  # use Laplace prior for beta_t (sparsity)
   head_input_scale: 0.1
   logit_scale: 0.5
   num_patients: 128
@@ -19,6 +20,7 @@ model:
   beta_s_scale: 1.0
   beta_t_laplace_scale: 0.3
   gamma_scale: 1.0
+  gene_sparsity: true  # use Laplace prior for beta_t (sparsity)
   head_input_scale: 0.1
   logit_scale: 0.5
   n_cell_types: 8

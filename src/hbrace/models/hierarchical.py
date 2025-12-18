@@ -51,13 +51,24 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     theta_expanded = theta[batch.subtype_ids]
 
     # Mean and dispersion shifts for on-treatment distributions.
-    Delta_std = sample(
-        "Delta_std",
-        Gamma(
-            torch.full((C, G, d_z), 2.0, device=device),
-            torch.full((C, G, d_z), 5.0, device=device),  # rate=5.0, mean=0.4 to match data generation
-        ).to_event(3),
-    )
+    if config.gene_sparsity:
+        # Sparsity version: tighter prior
+        Delta_std = sample(
+            "Delta_std",
+            Gamma(
+                torch.full((C, G, d_z), 2.0, device=device),
+                torch.full((C, G, d_z), 5.0, device=device),  # rate=5.0, mean=0.4
+            ).to_event(3),
+        )
+    else:
+        # Original version: looser prior
+        Delta_std = sample(
+            "Delta_std",
+            Gamma(
+                torch.full((C, G, d_z), 2.0, device=device),
+                torch.full((C, G, d_z), 2.0, device=device),  # rate=2.0, mean=1.0
+            ).to_event(3),
+        )
     Delta = sample("Delta", Normal(torch.zeros((C, G, d_z), device=device), Delta_std).to_event(3))
     delta_std = sample(
         "delta_std",
@@ -68,14 +79,28 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     )
 
     # Cell-type proportion shifts for on-treatment mixture weights.
-    # Simplified to match data generation (fixed scale instead of hierarchical)
-    W = sample(
-        "W",
-        Normal(
-            torch.zeros((C, d_z), device=device),
-            torch.full((C, d_z), 0.5, device=device),  # fixed std=0.5 to match data generation
-        ).to_event(2),
-    )
+    if config.gene_sparsity:
+        # Sparsity version: simplified fixed scale
+        W = sample(
+            "W",
+            Normal(
+                torch.zeros((C, d_z), device=device),
+                torch.full((C, d_z), 0.5, device=device),
+            ).to_event(2),
+        )
+    else:
+        # Original version: hierarchical prior
+        W_std = sample(
+            "W_std",
+            Gamma(
+                torch.full((C, d_z), 2.0, device=device),
+                torch.full((C, d_z), 4.0, device=device),  # rate=4.0, mean=0.5
+            ).to_event(2),
+        )
+        W = sample(
+            "W",
+            Normal(torch.zeros((C, d_z), device=device), W_std).to_event(2),
+        )
     epsilon_std = sample(
         "epsilon_std",
         Gamma(
@@ -102,13 +127,24 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             torch.tensor(config.beta0_scale, device=device),
         ),
     )
-    beta_t = sample(
-        "beta_t",
-        Laplace(
-            torch.zeros((G,), device=device),
-            torch.full((G,), config.beta_t_laplace_scale, device=device),
-        ).to_event(1),
-    )
+    if config.gene_sparsity:
+        # Sparsity version: Laplace prior for sparsity
+        beta_t = sample(
+            "beta_t",
+            Laplace(
+                torch.zeros((G,), device=device),
+                torch.full((G,), config.beta_t_laplace_scale, device=device),
+            ).to_event(1),
+        )
+    else:
+        # Original version: Normal prior (no sparsity)
+        beta_t = sample(
+            "beta_t",
+            Normal(
+                torch.zeros((G,), device=device),
+                torch.full((G,), 2.0, device=device),
+            ).to_event(1),
+        )
     gamma = sample(
         "gamma",
         Normal(torch.zeros((r_u,), device=device), torch.full((r_u,), config.gamma_scale, device=device)).to_event(1),
@@ -132,13 +168,24 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             Dirichlet(tau_i_p.unsqueeze(-1) * theta_expanded.clamp_min(1e-6)),
         )
 
-        log_mu_p = sample(
-            "log_mu_p",
-            Normal(
-                torch.full((C, G), 1.0, device=device),  # mean=1.0 to match data generation
-                torch.full((C, G), 0.5, device=device),  # std=0.5 to match data generation
-            ).to_event(2),
-        )
+        if config.gene_sparsity:
+            # Sparsity version: tighter prior
+            log_mu_p = sample(
+                "log_mu_p",
+                Normal(
+                    torch.full((C, G), 1.0, device=device),
+                    torch.full((C, G), 0.5, device=device),
+                ).to_event(2),
+            )
+        else:
+            # Original version: looser prior
+            log_mu_p = sample(
+                "log_mu_p",
+                Normal(
+                    torch.full((C, G), 1.5, device=device),
+                    torch.full((C, G), 0.8, device=device),
+                ).to_event(2),
+            )
         mu_p = torch.exp(log_mu_p)
 
         phi_p_std = sample(
