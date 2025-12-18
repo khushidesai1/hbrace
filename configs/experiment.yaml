@@ -14,11 +14,11 @@ model:
   subtype_rate: 0.1
   u_dim: 5
   z_dim: 6
-run_name: best_model_lowrank
+run_name: best_model
 vi:
   early_stopping_patience: 25
-  guide: auto_lowrank
-  guide_rank: 5
+  guide: auto_normal
+  guide_rank: null
   learning_rate: 0.003
   log_interval: 100
   num_epochs: 500
