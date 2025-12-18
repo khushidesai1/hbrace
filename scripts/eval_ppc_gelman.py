@@ -20,7 +20,7 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.dpi'] = 150
 
 # %% Load configuration and data
-config_path = "configs/experiment.yaml"
+config_path = "results/best_model_even_bigger_shift/config.yaml"
 run_name, model_config, vi_config, data_config = load_config(config_path)
 
 data_path = f"./data/synthetic_data_{run_name}"

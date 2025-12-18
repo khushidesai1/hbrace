@@ -6,12 +6,14 @@ from typing import Dict, Optional, Tuple, Callable
 import numpy as np
 import torch
 from pyro.infer import Predictive
+from pyro.distributions import NegativeBinomial
 from scipy.stats import pearsonr, spearmanr, chi2
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 from hbrace.config import ModelConfig, VIConfig
 from hbrace.models import HBRACEModel
 from hbrace.models.guides import build_guide
+from hbrace.models.utils import nb_logits
 from hbrace.patient_data import SimulatedData
 from hbrace.patient_data.types import PatientBatch
 
@@ -29,12 +31,14 @@ def sample_q_t(
         model: Trained HBRACEModel instance.
         batch: PatientBatch to condition on.
         num_samples: Number of posterior samples to draw.
-        return_all: If True, return all sampled variables; if False, only q_t_mean.
+        return_all: If True, return all sampled variables; if False, only q_t.
         batch_size: Batch size for sampling (should match training batch_size for AutoGuides).
 
     Returns:
-        If return_all=False: q_t samples of shape (num_samples, N, G)
+        If return_all=False: q_t samples of shape (num_samples, N, G) built from sampled f_t.
         If return_all=True: Dictionary with all sampled sites including:
+            - q_t: (num_samples, N, G) sampled via NegativeBinomial draws of f_t
+            - f_t_sampled: (num_samples, N, C, G) NegativeBinomial draws used to build q_t
             - q_t_mean: (num_samples, N, G)
             - pi_t: (num_samples, N, C)
             - mu_t: (num_samples, N, C, G)
@@ -43,6 +47,31 @@ def sample_q_t(
             - logit_y: (num_samples, N)
     """
     N = batch.pre_counts.shape[0]
+
+    def _predictive_samples(current_batch: PatientBatch, sites: Tuple[str, ...]) -> Dict[str, torch.Tensor]:
+        predictive = Predictive(
+            model.model_fn,
+            guide=model.guide_fn,
+            num_samples=num_samples,
+            return_sites=sites,
+            parallel=False,
+        )
+        with torch.no_grad():
+            return predictive(current_batch)
+
+    def _sample_q_from_latents(samples: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+        mu_t = samples["mu_t"]
+        phi_t = samples["phi_t"]
+        pi_t = samples["pi_t"]
+        logits_t = nb_logits(mu_t, phi_t)
+        f_t_dist = NegativeBinomial(total_count=phi_t, logits=logits_t)
+        f_t_samples = f_t_dist.sample()
+        q_t_samples = (pi_t.unsqueeze(-1) * f_t_samples).sum(dim=-2)
+        return q_t_samples, f_t_samples
+
+    base_sites: Tuple[str, ...] = ("mu_t", "phi_t", "pi_t")
+    extra_sites: Tuple[str, ...] = ("q_t_mean", "z", "u", "logit_y", "eta_t")
+    return_sites = base_sites + extra_sites if return_all else base_sites
 
     # If batch size matches or is larger, process directly
     if N <= batch_size:
@@ -55,23 +84,15 @@ def sample_q_t(
             subtype_ids=batch.subtype_ids,
         )
 
-        # Use Predictive to sample from posterior
-        predictive = Predictive(
-            model.model_fn,
-            guide=model.guide_fn,
-            num_samples=num_samples,
-            return_sites=(
-                "q_t_mean", "pi_t", "mu_t", "z", "u", "logit_y", "eta_t"
-            ) if return_all else ("q_t_mean",),
-            parallel=False,
-        )
-
-        with torch.no_grad():
-            samples = predictive(batch_no_y)
+        samples = _predictive_samples(batch_no_y, return_sites)
+        q_t_samples, f_t_samples = _sample_q_from_latents(samples)
 
         if return_all:
+            samples = dict(samples)
+            samples["q_t"] = q_t_samples
+            samples["f_t_sampled"] = f_t_samples
             return samples
-        return samples["q_t_mean"]
+        return q_t_samples
 
     # Otherwise, process in batches and concatenate
     all_samples = [] if not return_all else None
@@ -89,28 +110,20 @@ def sample_q_t(
             subtype_ids=batch.subtype_ids[start_idx:end_idx],
         )
 
-        # Sample from this mini-batch
-        predictive = Predictive(
-            model.model_fn,
-            guide=model.guide_fn,
-            num_samples=num_samples,
-            return_sites=(
-                "q_t_mean", "pi_t", "mu_t", "z", "u", "logit_y", "eta_t"
-            ) if return_all else ("q_t_mean",),
-            parallel=False,
-        )
-
-        with torch.no_grad():
-            mini_samples = predictive(mini_batch)
+        mini_samples = _predictive_samples(mini_batch, return_sites)
+        q_t_samples, f_t_samples = _sample_q_from_latents(mini_samples)
 
         if return_all:
+            mini_samples = dict(mini_samples)
+            mini_samples["q_t"] = q_t_samples
+            mini_samples["f_t_sampled"] = f_t_samples
             # Accumulate all sites
             for site_name, site_values in mini_samples.items():
                 if site_name not in all_samples_dict:
                     all_samples_dict[site_name] = []
                 all_samples_dict[site_name].append(site_values)
         else:
-            all_samples.append(mini_samples["q_t_mean"])
+            all_samples.append(q_t_samples)
 
     # Concatenate along patient dimension
     if return_all:
