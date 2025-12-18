@@ -13,7 +13,8 @@ from hbrace.patient_data.dataset import get_train_test_dataloaders
 
 from hbrace.models.utils import auprc_for_responses, predictive_log_likelihood
 from hbrace.models.guides import build_guide
-from sklearn.metrics import precision_recall_curve, f1_score, recall_score, precision_score, accuracy_score
+from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score
 
 # %% Load the data and the model
 config_path = "configs/experiment.yaml"
@@ -77,27 +78,47 @@ auprc, y_true, y_score = auprc_for_responses(
 )
 print(f"AUPRC on validation responses: {auprc:.3f}")
 
-print("Scores for patient responses:")
-print(y_score)
+print("\nPredicted probability statistics:")
+print(f"  Min:  {y_score.min():.4f}")
+print(f"  Max:  {y_score.max():.4f}")
+print(f"  Mean: {y_score.mean():.4f}")
+print(f"  Std:  {y_score.std():.4f}")
 
-f1_score = f1_score(y_true, y_score > 0.5, average='macro')
-print(f"F1 score on validation responses: {f1_score:.3f}")
-
-recall_score = recall_score(y_true, y_score > 0.5, average='macro')
-print(f"Recall score on validation responses: {recall_score:.3f}")
-
-precision_score = precision_score(y_true, y_score > 0.5, average='macro')
-print(f"Precision score on validation responses: {precision_score:.3f}")
-
-accuracy_score = accuracy_score(y_true, y_score > 0.5)
-print(f"Accuracy score on validation responses: {accuracy_score:.3f}")
-
-# %% Plot the PR curve
+# %% Find optimal threshold from precision-recall curve
 precision, recall, thresholds = precision_recall_curve(y_true, y_score)
-plt.figure()
-plt.plot(recall, precision, label="AUPRC")
-plt.xlabel("Recall")
-plt.ylabel("Precision")
-plt.title("PR Curve")
-plt.legend()
-plt.savefig(f"results/{run_name}/pr_curve.png")
+
+# Calculate F1 score for each threshold to find optimal
+f1_scores = 2 * (precision[:-1] * recall[:-1]) / (precision[:-1] + recall[:-1] + 1e-10)
+optimal_idx = np.argmax(f1_scores)
+optimal_threshold = thresholds[optimal_idx]
+
+print(f"\nOptimal threshold from PR curve: {optimal_threshold:.4f}")
+
+# Compute metrics with optimal threshold
+y_pred_optimal = (y_score > optimal_threshold).astype(int)
+
+f1_optimal = f1_score(y_true, y_pred_optimal, average='macro')
+recall_optimal = recall_score(y_true, y_pred_optimal, average='macro')
+precision_optimal = precision_score(y_true, y_pred_optimal, average='macro', zero_division=0)
+accuracy_optimal = accuracy_score(y_true, y_pred_optimal)
+
+print(f"\nMetrics with optimal threshold ({optimal_threshold:.4f}):")
+print(f"  F1 score: {f1_optimal:.3f}")
+print(f"  Recall: {recall_optimal:.3f}")
+print(f"  Precision: {precision_optimal:.3f}")
+print(f"  Accuracy: {accuracy_optimal:.3f}")
+
+# %% Plot the PR curve with optimal threshold marked
+plt.figure(figsize=(10, 6))
+plt.plot(recall, precision, label=f"AUPRC={auprc:.3f}", linewidth=2)
+plt.scatter(recall[optimal_idx], precision[optimal_idx], color='red', s=100,
+            label=f'Optimal (threshold={optimal_threshold:.3f}, F1={f1_scores[optimal_idx]:.3f})', zorder=5)
+plt.xlabel("Recall", fontsize=12)
+plt.ylabel("Precision", fontsize=12)
+plt.title("Precision-Recall Curve", fontsize=14)
+plt.legend(fontsize=10)
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig(f"results/{run_name}/pr_curve.png", dpi=150)
+plt.savefig(f"results/{run_name}/pr_curve.svg")
+print(f"\nSaved PR curve to results/{run_name}/pr_curve.png")
