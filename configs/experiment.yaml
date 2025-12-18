@@ -1,4 +1,4 @@
-run_name: 100_sparse_delta
+run_name: 100_sparse_normal
 data:
   batch_size: 8
   beta_t_active_frac: 0.3
@@ -15,7 +15,7 @@ data:
   seed: 88
   test_fraction: 0.25
 model:
-  beta_t_laplace_scale: 1.0
+  beta_t_laplace_scale: 0.3  # matches data generation: beta_t_active_scale * beta_t_active_frac = 1.0 * 0.3
   logit_scale: 0.5
   gamma_scale: 1.0
   beta_s_scale: 1.0
@@ -36,6 +36,8 @@ vi:
   guide: auto_delta
   guide_rank: null
   learning_rate: 0.003
+  # delta_warmup_lr: 0.003
+  # delta_warmup_epochs: 50
   log_interval: 100
-  num_epochs: 300
+  num_epochs: 500
   seed: 0

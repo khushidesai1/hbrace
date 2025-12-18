@@ -38,6 +38,8 @@ class VIConfig:
     guide: str = "auto_delta"
     guide_rank: Optional[int] = None
     seed: int = 0
+    delta_warmup_epochs: int = 0  # optional warm-up with AutoDelta before switching to main guide
+    delta_warmup_lr: Optional[float] = None  # optional LR for warm-up; defaults to learning_rate
 
 
 @dataclass

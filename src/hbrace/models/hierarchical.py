@@ -55,7 +55,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "Delta_std",
         Gamma(
             torch.full((C, G, d_z), 2.0, device=device),
-            torch.full((C, G, d_z), 2.0, device=device),
+            torch.full((C, G, d_z), 5.0, device=device),  # rate=5.0, mean=0.4 to match data generation
         ).to_event(3),
     )
     Delta = sample("Delta", Normal(torch.zeros((C, G, d_z), device=device), Delta_std).to_event(3))
@@ -68,16 +68,13 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     )
 
     # Cell-type proportion shifts for on-treatment mixture weights.
-    W_std = sample(
-        "W_std",
-        Gamma(
-            torch.full((C, d_z), 2.0, device=device),  # shape
-            torch.full((C, d_z), 4.0, device=device),  # rate -> mean 0.5
-        ).to_event(2),
-    )
+    # Simplified to match data generation (fixed scale instead of hierarchical)
     W = sample(
         "W",
-        Normal(torch.zeros((C, d_z), device=device), W_std).to_event(2),
+        Normal(
+            torch.zeros((C, d_z), device=device),
+            torch.full((C, d_z), 0.5, device=device),  # fixed std=0.5 to match data generation
+        ).to_event(2),
     )
     epsilon_std = sample(
         "epsilon_std",
@@ -138,8 +135,8 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         log_mu_p = sample(
             "log_mu_p",
             Normal(
-                torch.full((C, G), 1.5, device=device),
-                torch.full((C, G), 0.8, device=device),
+                torch.full((C, G), 1.0, device=device),  # mean=1.0 to match data generation
+                torch.full((C, G), 0.5, device=device),  # std=0.5 to match data generation
             ).to_event(2),
         )
         mu_p = torch.exp(log_mu_p)

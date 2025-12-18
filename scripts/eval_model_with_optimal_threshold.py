@@ -76,7 +76,7 @@ auprc, y_true, y_score = auprc_for_responses(
     num_samples=n_samples,
     device=torch.device(data_config.device),
 )
-print(f"AUPRC on validation responses: {auprc:.3f}")
+print(f"\nAUPRC on validation responses: {auprc:.3f}")
 
 print("\nPredicted probability statistics:")
 print(f"  Min:  {y_score.min():.4f}")
@@ -84,17 +84,35 @@ print(f"  Max:  {y_score.max():.4f}")
 print(f"  Mean: {y_score.mean():.4f}")
 print(f"  Std:  {y_score.std():.4f}")
 
-# %% Find optimal threshold from precision-recall curve
+print("\nTrue label distribution:")
+print(f"  Class 0: {(y_true == 0).sum()} ({(y_true == 0).sum() / len(y_true) * 100:.1f}%)")
+print(f"  Class 1: {(y_true == 1).sum()} ({(y_true == 1).sum() / len(y_true) * 100:.1f}%)")
+
+# %% Find optimal threshold using precision-recall curve
 precision, recall, thresholds = precision_recall_curve(y_true, y_score)
 
-# Calculate F1 score for each threshold to find optimal
+# Calculate F1 score for each threshold
 f1_scores = 2 * (precision[:-1] * recall[:-1]) / (precision[:-1] + recall[:-1] + 1e-10)
 optimal_idx = np.argmax(f1_scores)
 optimal_threshold = thresholds[optimal_idx]
+optimal_f1 = f1_scores[optimal_idx]
 
-print(f"\nOptimal threshold from PR curve: {optimal_threshold:.4f}")
+print(f"\n{'='*60}")
+print(f"OPTIMAL THRESHOLD ANALYSIS")
+print(f"{'='*60}")
+print(f"Optimal threshold: {optimal_threshold:.4f}")
+print(f"F1 at optimal threshold: {optimal_f1:.3f}")
+print(f"Precision at optimal threshold: {precision[optimal_idx]:.3f}")
+print(f"Recall at optimal threshold: {recall[optimal_idx]:.3f}")
 
-# Compute metrics with optimal threshold
+# Also try median threshold
+median_threshold = np.median(y_score)
+print(f"\nMedian threshold: {median_threshold:.4f}")
+
+# %% Compute metrics with optimal threshold
+print(f"\n{'='*60}")
+print(f"METRICS WITH OPTIMAL THRESHOLD ({optimal_threshold:.4f})")
+print(f"{'='*60}")
 y_pred_optimal = (y_score > optimal_threshold).astype(int)
 
 f1_optimal = f1_score(y_true, y_pred_optimal, average='macro')
@@ -102,23 +120,62 @@ recall_optimal = recall_score(y_true, y_pred_optimal, average='macro')
 precision_optimal = precision_score(y_true, y_pred_optimal, average='macro', zero_division=0)
 accuracy_optimal = accuracy_score(y_true, y_pred_optimal)
 
-print(f"\nMetrics with optimal threshold ({optimal_threshold:.4f}):")
-print(f"  F1 score: {f1_optimal:.3f}")
-print(f"  Recall: {recall_optimal:.3f}")
-print(f"  Precision: {precision_optimal:.3f}")
-print(f"  Accuracy: {accuracy_optimal:.3f}")
+print(f"F1 score: {f1_optimal:.3f}")
+print(f"Recall: {recall_optimal:.3f}")
+print(f"Precision: {precision_optimal:.3f}")
+print(f"Accuracy: {accuracy_optimal:.3f}")
+
+# %% Compute metrics with 0.5 threshold for comparison
+print(f"\n{'='*60}")
+print(f"METRICS WITH 0.5 THRESHOLD (for comparison)")
+print(f"{'='*60}")
+y_pred_05 = (y_score > 0.5).astype(int)
+
+f1_05 = f1_score(y_true, y_pred_05, average='macro')
+recall_05 = recall_score(y_true, y_pred_05, average='macro')
+precision_05 = precision_score(y_true, y_pred_05, average='macro', zero_division=0)
+accuracy_05 = accuracy_score(y_true, y_pred_05)
+
+print(f"F1 score: {f1_05:.3f}")
+print(f"Recall: {recall_05:.3f}")
+print(f"Precision: {precision_05:.3f}")
+print(f"Accuracy: {accuracy_05:.3f}")
 
 # %% Plot the PR curve with optimal threshold marked
 plt.figure(figsize=(10, 6))
 plt.plot(recall, precision, label=f"AUPRC={auprc:.3f}", linewidth=2)
 plt.scatter(recall[optimal_idx], precision[optimal_idx], color='red', s=100,
-            label=f'Optimal (threshold={optimal_threshold:.3f}, F1={f1_scores[optimal_idx]:.3f})', zorder=5)
+            label=f'Optimal threshold={optimal_threshold:.3f}, F1={optimal_f1:.3f}', zorder=5)
 plt.xlabel("Recall", fontsize=12)
 plt.ylabel("Precision", fontsize=12)
 plt.title("Precision-Recall Curve", fontsize=14)
 plt.legend(fontsize=10)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig(f"results/{run_name}/pr_curve.png", dpi=150)
-plt.savefig(f"results/{run_name}/pr_curve.svg")
-print(f"\nSaved PR curve to results/{run_name}/pr_curve.png")
+plt.savefig(f"results/{run_name}/pr_curve_with_optimal.png", dpi=150)
+plt.savefig(f"results/{run_name}/pr_curve_with_optimal.svg")
+print(f"\nSaved PR curve to results/{run_name}/pr_curve_with_optimal.png")
+
+# %% Plot histogram of predicted probabilities by true class
+plt.figure(figsize=(10, 6))
+plt.hist(y_score[y_true == 0], bins=30, alpha=0.5, label='Non-responders (y=0)', color='blue')
+plt.hist(y_score[y_true == 1], bins=30, alpha=0.5, label='Responders (y=1)', color='red')
+plt.axvline(optimal_threshold, color='green', linestyle='--', linewidth=2, label=f'Optimal threshold={optimal_threshold:.3f}')
+plt.axvline(0.5, color='black', linestyle='--', linewidth=2, alpha=0.5, label='Default threshold=0.5')
+plt.xlabel("Predicted Probability", fontsize=12)
+plt.ylabel("Count", fontsize=12)
+plt.title("Distribution of Predicted Probabilities by True Class", fontsize=14)
+plt.legend(fontsize=10)
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig(f"results/{run_name}/prob_distribution.png", dpi=150)
+print(f"Saved probability distribution to results/{run_name}/prob_distribution.png")
+
+print(f"\n{'='*60}")
+print(f"SUMMARY")
+print(f"{'='*60}")
+print(f"The AUPRC of {auprc:.3f} indicates good ranking ability.")
+print(f"However, predictions are compressed in [{y_score.min():.3f}, {y_score.max():.3f}].")
+print(f"Using optimal threshold {optimal_threshold:.3f} instead of 0.5 improves:")
+print(f"  F1: {f1_05:.3f} → {f1_optimal:.3f} ({(f1_optimal-f1_05):.3f} improvement)")
+print(f"  Accuracy: {accuracy_05:.3f} → {accuracy_optimal:.3f}")
