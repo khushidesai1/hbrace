@@ -5,6 +5,7 @@ data:
   beta_s_scale: 1.0
   beta_t_active_frac: 0.3
   beta_t_active_scale: 1.0
+  composition_model: poe  # "linear" or "poe" (product of experts)
   device: cpu
   gamma_scale: 1.0
   gene_sparsity: true  # use Laplace prior for beta_t (sparsity)
@@ -19,6 +20,7 @@ model:
   beta0_scale: 1.0
   beta_s_scale: 1.0
   beta_t_laplace_scale: 0.3
+  composition_model: poe  # "linear" or "poe" (product of experts)
   gamma_scale: 1.0
   gene_sparsity: true  # use Laplace prior for beta_t (sparsity)
   head_input_scale: 0.1
@@ -32,7 +34,7 @@ model:
   subtype_rate: 0.1
   u_dim: 8
   z_dim: 8
-run_name: 500_sparse_lowrank
+run_name: 500_sparse_lowrank_poe
 vi:
   delta_warmup_epochs: 0
   delta_warmup_lr: null

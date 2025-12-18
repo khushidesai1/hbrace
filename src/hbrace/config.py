@@ -16,6 +16,7 @@ class ModelConfig:
     z_dim: int = 4  # dimension for latent z_i treatment effect
     u_dim: int = 5  # dimension for latent u_i confounder
     gene_sparsity: bool = True  # if True, use Laplace prior on beta_t; if False, use Normal(0, 2.0)
+    composition_model: str = "linear"  # "linear" or "poe" (product of experts)
     beta_t_laplace_scale: float = 1.0  # scale of Laplace prior on beta_t (only used if gene_sparsity=True)
     beta0_loc: float = -0.85  # prior mean for intercept (approx logit of base rate 0.3)
     beta0_scale: float = 1.0  # prior std for intercept
@@ -52,6 +53,7 @@ class DataConfig:
     seed: int = 0
     device: str = "cpu"
     gene_sparsity: bool = True  # if True, use sparse beta_t; if False, use Normal(0, 2.0) for all genes
+    composition_model: str = "linear"  # "linear" or "poe" (product of experts)
     beta_t_active_frac: float = 0.1  # fraction of genes truly predictive in synthetic data (only used if gene_sparsity=True)
     beta_t_active_scale: float = 1.0  # base scale for beta_t coefficients in synthetic data (only used if gene_sparsity=True)
     response_base_rate: float = 0.3  # target baseline response rate in synthetic data

@@ -51,8 +51,10 @@ class SimConfig:
     d_z: int = 3  # dim of treatment effect z_i
     r_u: int = 2  # dim of confounder u_i
     gene_sparsity: bool = True  # if True, use Laplace for beta_t; if False, use Normal(0, 2.0)
+    composition_model: str = "linear"  # "linear" or "poe" (product of experts)
     sigma_D: float = 0.5  # std for Delta_cg
-    sigma_W: float = 0.5  # std for W_P
+    sigma_W: float = 0.5  # std for W_P (treatment -> composition)
+    sigma_V: float = 0.5  # std for V (confounder -> composition; only used if composition_model="poe")
     sigma_eps: float = 0.1  # std for epsilon_i in eta^t
     beta_t_active_frac: float = 0.1  # fraction proxy; scales beta_t magnitude (smaller -> more shrinkage; only used if gene_sparsity=True)
     beta_t_active_scale: float = 1.0  # base scale for beta_t coefficients (only used if gene_sparsity=True)
