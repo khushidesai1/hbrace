@@ -12,7 +12,6 @@ from hbrace.models import HBRACEModel
 from hbrace.models.guides import build_guide
 from hbrace.models.ppc import (
     posterior_predictive_check_q_t,
-    posterior_predictive_check_summary_stats,
 )
 from hbrace.patient_data import SimulatedDataGenerator
 
