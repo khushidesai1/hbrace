@@ -1,5 +1,4 @@
-"""Diagnose posterior uncertainty and identifiability issues."""
-
+# %% Import necessary libraries
 import numpy as np
 import torch
 import pyro
@@ -9,23 +8,23 @@ from hbrace.config import load_config
 from hbrace.models import HBRACEModel
 from hbrace.patient_data import SimulatedDataGenerator
 
-# Load configuration
+# %% Load configuration
 config_path = "results/best_model_even_bigger_shift/config.yaml"
 run_name, model_config, vi_config, data_config = load_config(config_path)
 
-# Load data
+# %% Load data
 data_path = f"./data/synthetic_data_{run_name}"
 print(f"Loading data from {data_path}")
 sim_data = SimulatedDataGenerator.load(data_path)
 batch = sim_data.to_patient_batch(device=data_config.device)
 
-# Load trained model
+# %% Load trained model
 print("Loading trained model...")
 model = HBRACEModel(model_config, vi_config)
 checkpoint_path = f"saved_models/checkpoint_{run_name}.pth"
 model.load_checkpoint(checkpoint_path, map_location=data_config.device)
 
-# Build guide
+# %% Build guide
 from hbrace.models.guides import build_guide
 model.guide_fn = build_guide(
     model.model_fn,
@@ -34,12 +33,12 @@ model.guide_fn = build_guide(
     rank=vi_config.guide_rank,
 )
 
-# Sample from posterior with more samples to estimate uncertainty
+# %% Sample from posterior with more samples to estimate uncertainty
 print("\nSampling from posterior to estimate uncertainty...")
 num_samples = 500
 pyro.set_rng_seed(42)
 
-# Process first batch only for speed
+# %% Process first batch only for speed
 batch_size = 8
 mini_batch = batch
 mini_batch.pre_counts = batch.pre_counts[:batch_size]
@@ -52,7 +51,7 @@ with torch.no_grad():
     predictive = Predictive(model.model_fn, guide=model.guide_fn, num_samples=num_samples)
     samples = predictive(mini_batch)
 
-# Analyze z uncertainty
+# %% Analyze z uncertainty
 z_samples = samples["z"].cpu().numpy()  # (num_samples, batch_size, d_z)
 print(f"\nz samples shape: {z_samples.shape}")
 
@@ -73,7 +72,7 @@ for i in range(min(3, batch_size)):
     print(f"  z std:  {z_std[i]}")
     print(f"  Signal-to-noise ratio: {np.abs(z_mean[i]) / z_std[i]}")
 
-# Also check global parameters
+# %% Check global parameters
 if "W" in samples:
     W_samples = samples["W"].cpu().numpy()  # (num_samples, C, d_z)
     W_mean = W_samples.mean(axis=0)
@@ -99,17 +98,3 @@ if "lambda_T" in samples:
     print(f"lambda_T mean: {lambda_T_samples.mean():.3f}")
     print(f"lambda_T std: {lambda_T_samples.std():.3f}")
     print(f"lambda_T prior: Beta(3, 4) with mean = 3/7 ≈ 0.43")
-
-print("\n" + "="*60)
-print("INTERPRETATION:")
-print("="*60)
-print("If posterior std ≈ prior std:")
-print("  → Model hasn't learned much, posterior ≈ prior")
-print("If posterior std >> prior std:")
-print("  → Posterior is more uncertain than prior (bad!)")
-print("If posterior std << prior std:")
-print("  → Model has learned and is confident (good!)")
-print("\nFor good predictions, we want:")
-print("  1. Low posterior std (confident)")
-print("  2. High signal-to-noise ratio (|mean| >> std)")
-print("  3. Separation between responders and non-responders in z space")
