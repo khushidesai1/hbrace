@@ -30,7 +30,7 @@ model:
   subtype_rate: 0.1
   u_dim: 8
   z_dim: 8
-run_name: 100_sparse_lowrank
+run_name: 500_sparse_lowrank
 vi:
   delta_warmup_epochs: 0
   delta_warmup_lr: null
