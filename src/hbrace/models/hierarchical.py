@@ -79,28 +79,13 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     )
 
     # Cell-type proportion shifts for on-treatment mixture weights.
-    if config.gene_sparsity:
-        # Sparsity version: simplified fixed scale (moderate for stability)
-        W = sample(
-            "W",
-            Normal(
-                torch.zeros((C, d_z), device=device),
-                torch.full((C, d_z), 1.0, device=device),  # Moderate value balanced with less sparse compositions
-            ).to_event(2),
-        )
-    else:
-        # Original version: hierarchical prior (moderate for stability)
-        W_std = sample(
-            "W_std",
-            Gamma(
-                torch.full((C, d_z), 2.0, device=device),
-                torch.full((C, d_z), 2.0, device=device),  # rate=2.0, mean=1.0
-            ).to_event(2),
-        )
-        W = sample(
-            "W",
-            Normal(torch.zeros((C, d_z), device=device), W_std).to_event(2),
-        )
+    W = sample(
+        "W",
+        Normal(
+            torch.zeros((C, d_z), device=device),
+            torch.full((C, d_z), 1.0, device=device),  # Moderate value balanced with less sparse compositions
+        ).to_event(2),
+    )
     epsilon_std = sample(
         "epsilon_std",
         Gamma(
@@ -117,8 +102,6 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "T",
         Laplace(torch.zeros((C, C), device=device), lambda_T).to_event(2),
     )
-    # # Enforce zero diagonal to mirror synthetic generator.
-    # T = deterministic("T_masked", T * (1.0 - torch.eye(C, device=device)))
 
     beta0 = sample(
         "beta0",
@@ -311,11 +294,17 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         q_t_head = q_t_mean * config.head_input_scale
         u_head = u * config.head_input_scale
         subtype_ids_ohe = torch.nn.functional.one_hot(batch.subtype_ids, num_classes=config.n_subtypes)
-        linear = config.logit_scale * (
-            (q_t_head * beta_t).sum(dim=-1)
-            + (u_head * gamma).sum(dim=-1)
-            + (beta_s * subtype_ids_ohe).sum(dim=-1)
-        )
+
+        # Compute gene and confounder contributions separately
+        s_q = (q_t_head * beta_t).sum(dim=-1)  # Gene contribution (N,)
+        s_u = (u_head * gamma).sum(dim=-1)     # Confounder contribution (N,)
+        s_s = (beta_s * subtype_ids_ohe).sum(dim=-1)  # Subtype contribution (N,)
+
+        # Orthogonality constraint: penalize correlation between gene and confounder effects
+        if config.lambda_orth > 0:
+            factor("orth_q_u", -config.lambda_orth * torch.mean(s_q * s_u))
+
+        linear = config.logit_scale * (s_q + s_u + s_s)
         logit_y = deterministic("logit_y", beta0 + linear)
         sample(
             "y",

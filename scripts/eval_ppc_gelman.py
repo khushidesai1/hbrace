@@ -20,7 +20,7 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.dpi'] = 150
 
 # %% Load configuration and data
-config_path = "results/best_model_even_bigger_shift/config.yaml"
+config_path = "configs/experiment.yaml"
 run_name, model_config, vi_config, data_config = load_config(config_path)
 
 data_path = f"./data/synthetic_data_{run_name}"
@@ -37,6 +37,7 @@ if sim_data.extra_params is None or len(sim_data.extra_params) == 0:
         model_config=model_config,
         n_patients=data_config.num_patients,
         seed=data_config.seed,
+        data_config=data_config,
     )
     _, sim_data = generator.generate_batch(
         device=data_config.device,

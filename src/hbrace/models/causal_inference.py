@@ -79,6 +79,71 @@ class CausalInferenceEvaluator:
                 return value.shape[0]
         return 1
 
+    def _recompute_pi_t_clean(
+        self,
+        patient_indices: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """
+        Recompute pi_t WITHOUT epsilon noise for clean counterfactual interventions.
+
+        This recomputes the deterministic part of the composition transformation:
+        - Linear model: eta_t_clean = eta_p + z @ (T @ W)^T
+        - PoE model: pi_t_clean = pi_p * g_z * h_u (product of experts)
+
+        Args:
+            patient_indices: Subset of patients. If None, use all patients.
+
+        Returns:
+            Clean pi_t of shape (n_samples, n_patients, C) without noise
+        """
+        if patient_indices is None:
+            patient_indices = np.arange(self.n_patients)
+
+        n_patients_subset = len(patient_indices)
+
+        # Get posterior samples (without epsilon)
+        pi_p = self.posterior['pi_p'].cpu().numpy()[:, patient_indices, :]  # (S, N, C)
+        z = self.posterior['z'].cpu().numpy()[:, patient_indices, :]  # (S, N, d_z)
+        T = self.posterior['T'].cpu().numpy()  # (S, C, C)
+        W = self.posterior['W'].cpu().numpy()  # (S, C, d_z)
+
+        pi_t_clean = np.zeros((self.n_posterior_samples, n_patients_subset, self.n_cell_types))
+
+        if self.config.composition_model == "linear":
+            # Linear model: eta_t_clean = eta_p + z @ (T @ W)^T
+            for s in range(self.n_posterior_samples):
+                eta_p = clr(pi_p[s])  # (N, C)
+                TW = T[s] @ W[s]  # (C, C) @ (C, d_z) = (C, d_z)
+                eta_shift = z[s] @ TW.T  # (N, d_z) @ (d_z, C) = (N, C)
+                eta_t_clean = eta_p + eta_shift
+                pi_t_clean[s] = inv_clr(eta_t_clean)
+
+        elif self.config.composition_model == "poe":
+            # Product of Experts model
+            u = self.posterior['u'].cpu().numpy()[:, patient_indices, :]  # (S, N, r_u)
+            V = self.posterior.get('V')
+            if V is not None:
+                V = V.cpu().numpy()  # (S, C, r_u)
+
+            for s in range(self.n_posterior_samples):
+                # Expert 1: treatment effect
+                TW = T[s] @ W[s]  # (C, C) @ (C, d_z) = (C, d_z)
+                eta_z = z[s] @ TW.T  # (N, d_z) @ (d_z, C) = (N, C)
+                g_z = inv_clr(eta_z)
+
+                # Expert 2: confounder effect
+                V_transposed = V[s].T  # (C, r_u).T = (r_u, C)
+                eta_u = u[s] @ V_transposed  # (N, r_u) @ (r_u, C) = (N, C)
+                h_u = inv_clr(eta_u)
+
+                # Product of experts (without epsilon noise)
+                pi_t_unnorm = pi_p[s] * g_z * h_u
+                pi_t_clean[s] = pi_t_unnorm / pi_t_unnorm.sum(axis=-1, keepdims=True)
+        else:
+            raise ValueError(f"Unknown composition_model: {self.config.composition_model}")
+
+        return pi_t_clean
+
     def intervene_on_treatment_composition(
         self,
         delta_t: np.ndarray,
@@ -318,6 +383,13 @@ class CausalInferenceEvaluator:
 
         ACEt(δt) = E[Y_i(δt) - Y_i(0)]
 
+        CORRECTED IMPLEMENTATION:
+        1. Recompute pi_t_clean from pi_p, z, T, W, V WITHOUT epsilon
+        2. Apply intervention in CLR space: eta_t_cf = eta_t_clean + delta
+        3. Hold all latents fixed (same u, z, mu_t, beta_*)
+        4. Predict y using q_t_mean (no resampling)
+        5. Compute ACE as p_y_cf - p_y_f
+
         Args:
             delta_t: Perturbation magnitude for the specified cell type.
             cell_type_idx: Which cell type to perturb.
@@ -338,14 +410,29 @@ class CausalInferenceEvaluator:
             else:
                 patient_indices = np.arange(self.n_patients)
 
-        # Factual (δ=0): use observed pi_t
-        pi_t_factual = self.posterior['pi_t'].cpu().numpy()[:, patient_indices, :]
-        p_y_factual = self.predict_response(pi_t_factual, patient_indices)
+        n_patients_subset = len(patient_indices)
 
-        # Counterfactual (δ=δt): intervene on composition
-        pi_t_counterfactual = self.intervene_on_treatment_composition(
-            delta_t, cell_type_idx, patient_indices
-        )
+        # Recompute pi_t WITHOUT epsilon noise (clean version)
+        pi_t_clean = self._recompute_pi_t_clean(patient_indices)  # (S, N, C)
+
+        # Factual (δ=0): use clean pi_t without intervention
+        p_y_factual = self.predict_response(pi_t_clean, patient_indices)
+
+        # Counterfactual (δ=δt): apply intervention in CLR space
+        pi_t_counterfactual = np.zeros_like(pi_t_clean)
+
+        # Create delta vector
+        delta_vec = np.zeros((n_patients_subset, self.n_cell_types))
+        delta_vec[:, cell_type_idx] = delta_t
+
+        for s in range(self.n_posterior_samples):
+            # Apply intervention: eta_t_cf = clr(pi_t_clean) + delta
+            eta_t_clean = clr(pi_t_clean[s])  # (N, C)
+            eta_t_cf = eta_t_clean + delta_vec  # (N, C)
+            pi_t_counterfactual[s] = inv_clr(eta_t_cf)  # (N, C)
+
+        # Predict response with counterfactual composition
+        # All latents (u, z, mu_t, beta_*) remain fixed
         p_y_counterfactual = self.predict_response(pi_t_counterfactual, patient_indices)
 
         # Compute ITE for each posterior sample and patient
@@ -381,8 +468,10 @@ class CausalInferenceEvaluator:
 
         ACEp(δp) = E[Y_i^p(δp) - Y_i^p(0)]
 
+        CORRECTED IMPLEMENTATION:
         This propagates the pre-treatment intervention through the full causal chain:
         π_p(δp) -> η_p(δp) -> η_t(δp) -> π_t(δp) -> q_t(δp) -> y(δp)
+        WITHOUT epsilon noise, holding all latents fixed.
 
         Args:
             delta_p: Perturbation magnitude for the specified cell type.
@@ -400,14 +489,68 @@ class CausalInferenceEvaluator:
             else:
                 patient_indices = np.arange(self.n_patients)
 
-        # Factual (δ=0): use observed pi_t
-        pi_t_factual = self.posterior['pi_t'].cpu().numpy()[:, patient_indices, :]
+        n_patients_subset = len(patient_indices)
+
+        # Factual (δ=0): use clean pi_t (without epsilon)
+        pi_t_factual = self._recompute_pi_t_clean(patient_indices)
         p_y_factual = self.predict_response(pi_t_factual, patient_indices)
 
-        # Counterfactual (δ=δp): intervene on pre-treatment and propagate
-        _, pi_t_counterfactual = self.intervene_on_pretreatment_composition(
-            delta_p, cell_type_idx, patient_indices
-        )
+        # Counterfactual (δ=δp): intervene on pre-treatment and propagate cleanly
+        # Get posterior samples
+        pi_p = self.posterior['pi_p'].cpu().numpy()[:, patient_indices, :]  # (S, N, C)
+        z = self.posterior['z'].cpu().numpy()[:, patient_indices, :]  # (S, N, d_z)
+        T = self.posterior['T'].cpu().numpy()  # (S, C, C)
+        W = self.posterior['W'].cpu().numpy()  # (S, C, d_z)
+
+        # Create delta vector
+        delta_vec = np.zeros((n_patients_subset, self.n_cell_types))
+        delta_vec[:, cell_type_idx] = delta_p
+
+        pi_t_counterfactual = np.zeros((self.n_posterior_samples, n_patients_subset, self.n_cell_types))
+
+        if self.config.composition_model == "linear":
+            # Linear model
+            for s in range(self.n_posterior_samples):
+                # Intervene on pi_p in log space
+                log_pi_p = np.log(np.clip(pi_p[s], 1e-12, 1.0))
+                pi_p_cf = softmax(log_pi_p + delta_vec, axis=-1)
+
+                # Propagate through composition transformation (without epsilon)
+                eta_p_cf = clr(pi_p_cf)  # (N, C)
+                TW = T[s] @ W[s]  # (C, C) @ (C, d_z) = (C, d_z)
+                eta_shift = z[s] @ TW.T  # (N, d_z) @ (d_z, C) = (N, C)
+                eta_t_cf = eta_p_cf + eta_shift
+                pi_t_counterfactual[s] = inv_clr(eta_t_cf)
+
+        elif self.config.composition_model == "poe":
+            # Product of Experts model
+            u = self.posterior['u'].cpu().numpy()[:, patient_indices, :]  # (S, N, r_u)
+            V = self.posterior.get('V')
+            if V is not None:
+                V = V.cpu().numpy()  # (S, C, r_u)
+
+            for s in range(self.n_posterior_samples):
+                # Intervene on pi_p
+                log_pi_p = np.log(np.clip(pi_p[s], 1e-12, 1.0))
+                pi_p_cf = softmax(log_pi_p + delta_vec, axis=-1)
+
+                # Expert 1: treatment effect
+                TW = T[s] @ W[s]  # (C, C) @ (C, d_z) = (C, d_z)
+                eta_z = z[s] @ TW.T  # (N, d_z) @ (d_z, C) = (N, C)
+                g_z = inv_clr(eta_z)
+
+                # Expert 2: confounder effect
+                V_transposed = V[s].T  # (C, r_u).T = (r_u, C)
+                eta_u = u[s] @ V_transposed  # (N, r_u) @ (r_u, C) = (N, C)
+                h_u = inv_clr(eta_u)
+
+                # Product of experts (without epsilon)
+                pi_t_unnorm = pi_p_cf * g_z * h_u
+                pi_t_counterfactual[s] = pi_t_unnorm / pi_t_unnorm.sum(axis=-1, keepdims=True)
+        else:
+            raise ValueError(f"Unknown composition_model: {self.config.composition_model}")
+
+        # Predict response (all latents held fixed)
         p_y_counterfactual = self.predict_response(pi_t_counterfactual, patient_indices)
 
         # Compute ITE and ACE

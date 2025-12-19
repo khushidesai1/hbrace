@@ -9,7 +9,7 @@ from hbrace.models import HBRACEModel
 from hbrace.patient_data import SimulatedDataGenerator
 
 # %% Load configuration
-config_path = "results/best_model_even_bigger_shift/config.yaml"
+config_path = "configs/experiment.yaml"
 run_name, model_config, vi_config, data_config = load_config(config_path)
 
 # %% Load data

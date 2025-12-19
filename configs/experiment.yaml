@@ -1,41 +1,44 @@
 data:
   batch_size: 8
-  device: cpu
-  num_patients: 128
-  seed: 88
-  test_fraction: 0.25
-  composition_model: poe  # "linear" or "poe" (product of experts)
-  gene_sparsity: true  # use tighter priors for stability
   beta0_loc: -0.85
   beta0_scale: 1.0
   beta_s_scale: 1.0
   beta_t_active_frac: 0.3
   beta_t_active_scale: 1.0
+  composition_model: linear
+  device: cpu
   gamma_scale: 1.0
+  gene_sparsity: true
   head_input_scale: 0.1
   logit_scale: 0.5
+  num_patients: 128
   response_base_rate: 0.3
+  seed: 88
+  test_fraction: 0.25
 model:
-  composition_model: poe  # "linear" or "poe" (product of experts)
-  gene_sparsity: true  # use tighter priors for stability
   beta0_loc: -0.85
   beta0_scale: 1.0
   beta_s_scale: 1.0
-  beta_t_laplace_scale: 0.2
+  beta_t_laplace_scale: 0.3
+  composition_model: linear
   gamma_scale: 1.0
+  gene_sparsity: true
   head_input_scale: 0.1
   logit_scale: 0.5
   n_cell_types: 5
-  n_genes: 1000
+  n_genes: 100
   n_subtypes: 3
   nb_dispersion_prior: 2.0
   nb_dispersion_rate: 1.0
   subtype_concentration: 2.0
   subtype_rate: 0.1
-  u_dim: 8
-  z_dim: 10
-run_name: model_1000_genes
+  u_dim: 5
+  z_dim: 6
+  lambda_orth: 0.0
+run_name: baseline
 vi:
+  delta_warmup_epochs: 0
+  delta_warmup_lr: null
   early_stopping_patience: 25
   guide: auto_lowrank
   guide_rank: 5

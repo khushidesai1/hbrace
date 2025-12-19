@@ -36,6 +36,7 @@ if sim_data.extra_params is None or len(sim_data.extra_params) == 0:
         model_config=model_config,
         n_patients=data_config.num_patients,
         seed=data_config.seed,
+        data_config=data_config,
     )
     _, sim_data = generator.generate_batch(
         device=data_config.device,
@@ -178,7 +179,7 @@ print("="*80)
 
 # Sample random intervention magnitudes for each cell type
 np.random.seed(42)  # For reproducibility
-delta_range = (-0.5, 0.5)  # More moderate range than log(2)
+delta_range = (-3, 3)  # More moderate range than log(2)
 delta_per_cell_type = np.random.uniform(delta_range[0], delta_range[1], size=model_config.n_cell_types)
 
 print(f"\nIntervention magnitude range: δ ∈ [{delta_range[0]:.2f}, {delta_range[1]:.2f}]")

@@ -28,6 +28,7 @@ class ModelConfig:
     subtype_rate: float = 0.1
     nb_dispersion_prior: float = 2.0
     nb_dispersion_rate: float = 1.0
+    lambda_orth: float = 0.0  # Orthogonality constraint strength (0 = no constraint)
 
 
 @dataclass
