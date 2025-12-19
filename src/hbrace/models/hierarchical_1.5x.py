@@ -53,12 +53,12 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
 
     # Mean and dispersion shifts for on-treatment distributions.
     if config.gene_sparsity:
-        # Old params: tighter prior (mean=0.4)
+        # 1.5x wider: mean=1.5 (shape=2.0, rate=1.333)
         Delta_std = sample(
             "Delta_std",
             Gamma(
                 torch.full((C, G, d_z), 2.0, device=device),
-                torch.full((C, G, d_z), 5.0, device=device),  # rate=5.0, mean=0.4
+                torch.full((C, G, d_z), 1.333, device=device),  # rate=1.333, mean=1.5
             ).to_event(3),
         )
     else:
@@ -80,33 +80,18 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     )
 
     # Cell-type proportion shifts for on-treatment mixture weights.
-    if config.gene_sparsity:
-        # Old params: simplified fixed scale
-        W = sample(
-            "W",
-            Normal(
-                torch.zeros((C, d_z), device=device),
-                torch.full((C, d_z), 1.0, device=device),  # Fixed at 1.0
-            ).to_event(2),
-        )
-    else:
-        # Original version: hierarchical prior
-        W_std = sample(
-            "W_std",
-            Gamma(
-                torch.full((C, d_z), 2.0, device=device),
-                torch.full((C, d_z), 2.0, device=device),  # rate=2.0, mean=1.0
-            ).to_event(2),
-        )
-        W = sample(
-            "W",
-            Normal(torch.zeros((C, d_z), device=device), W_std).to_event(2),
-        )
+    W = sample(
+        "W",
+        Normal(
+            torch.zeros((C, d_z), device=device),
+            torch.full((C, d_z), 3.0, device=device),  # 1.5x wider: 3.0
+        ).to_event(2),
+    )
     epsilon_std = sample(
         "epsilon_std",
         Gamma(
             torch.full((C,), 2.0, device=device),  # shape
-            torch.full((C,), 25.0, device=device),  # rate=25.0 -> mean 0.08 (old params)
+            torch.full((C,), 6.667, device=device),  # rate=6.667 -> mean 0.3 (1.5x)
         ).to_event(1),
     )
 
@@ -183,7 +168,7 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
     with plate("patients", n_patients):
         tau_i_p = sample(
             "tau_i_p",
-            Gamma(torch.tensor(2.0, device=device), torch.tensor(1.0, device=device)),  # rate=1.0 -> mean=2.0 (old params)
+            Gamma(torch.tensor(2.0, device=device), torch.tensor(3.333, device=device)),  # rate=3.333 -> mean=0.6 (1.5x)
         )
         pi_p = sample(
             "pi_p",
@@ -320,11 +305,17 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         q_t_head = q_t_mean * config.head_input_scale
         u_head = u * config.head_input_scale
         subtype_ids_ohe = torch.nn.functional.one_hot(batch.subtype_ids, num_classes=config.n_subtypes)
-        linear = config.logit_scale * (
-            (q_t_head * beta_t).sum(dim=-1)
-            + (u_head * gamma).sum(dim=-1)
-            + (beta_s * subtype_ids_ohe).sum(dim=-1)
-        )
+
+        # Compute gene and confounder contributions separately
+        s_q = (q_t_head * beta_t).sum(dim=-1)  # Gene contribution (N,)
+        s_u = (u_head * gamma).sum(dim=-1)     # Confounder contribution (N,)
+        s_s = (beta_s * subtype_ids_ohe).sum(dim=-1)  # Subtype contribution (N,)
+
+        # Orthogonality constraint: penalize correlation between gene and confounder effects
+        if config.lambda_orth > 0:
+            factor("orth_q_u", -config.lambda_orth * torch.mean(s_q * s_u))
+
+        linear = config.logit_scale * (s_q + s_u + s_s)
         logit_y = deterministic("logit_y", beta0 + linear)
         sample(
             "y",

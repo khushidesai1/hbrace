@@ -5,7 +5,7 @@ data:
   beta_s_scale: 1.0
   beta_t_active_frac: 0.3
   beta_t_active_scale: 1.0
-  composition_model: poe
+  composition_model: linear
   device: cpu
   gamma_scale: 1.0
   gene_sparsity: true
@@ -20,10 +20,11 @@ model:
   beta0_scale: 1.0
   beta_s_scale: 1.0
   beta_t_laplace_scale: 0.3
-  composition_model: poe
+  composition_model: linear
   gamma_scale: 1.0
   gene_sparsity: true
   head_input_scale: 0.1
+  lambda_orth: 0.0
   logit_scale: 0.5
   n_cell_types: 5
   n_genes: 100
@@ -34,7 +35,7 @@ model:
   subtype_rate: 0.1
   u_dim: 5
   z_dim: 6
-run_name: sparse_100_sum_ncells_laplace_old_params_lr0005_poe
+run_name: sparse_100_sum_ncells_laplace_old_params_lr0005
 vi:
   delta_warmup_epochs: 0
   delta_warmup_lr: null
