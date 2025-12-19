@@ -199,6 +199,14 @@ for cell_type_idx in range(model_config.n_cell_types):
     print(f"  ACE: {result['ace_mean']:+.4f} [{result['ace_ci_lower']:+.4f}, {result['ace_ci_upper']:+.4f}]")
     print(f"  Std: {result['ace_std']:.4f}")
 
+    # Print delta_sq diagnostic if available
+    if hasattr(evaluator, '_delta_sq_diagnostic'):
+        diag = evaluator._delta_sq_diagnostic
+        print(f"  delta_sq diagnostic:")
+        print(f"    Mean: {diag['mean']:.6f}, Std: {diag['std']:.6f}")
+        print(f"    Range: [{diag['min']:.6f}, {diag['max']:.6f}]")
+        print(f"    Median: {diag['median']:.6f}")
+
 # %% Example 2: Subtype-specific effects
 print("\n" + "="*80)
 print("Estimating subtype-specific ACE")

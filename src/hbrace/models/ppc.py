@@ -108,6 +108,8 @@ def sample_q_t(
             cell_type_proportions=batch.cell_type_proportions,
             responses=None,
             subtype_ids=batch.subtype_ids[start_idx:end_idx],
+            pre_ncells=batch.pre_ncells[start_idx:end_idx],
+            on_ncells=batch.on_ncells[start_idx:end_idx],
         )
 
         mini_samples = _predictive_samples(mini_batch, return_sites)

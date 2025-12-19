@@ -97,6 +97,8 @@ def auprc_for_responses(
             cell_type_proportions=batch_no_y.cell_type_proportions,
             responses=None,
             subtype_ids=batch_no_y.subtype_ids,
+            pre_ncells=batch_no_y.pre_ncells,
+            on_ncells=batch_no_y.on_ncells,
         )
         samples = predictive(batch_no_y)
         probs = torch.sigmoid(samples["logit_y"])  # (S, B, ...)

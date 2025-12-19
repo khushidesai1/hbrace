@@ -65,7 +65,7 @@ def collapse_cells(
             mask = types == c
             if not np.any(mask):
                 continue
-            aggregated[idx, c] = counts[mask].mean(axis=0)
+            aggregated[idx, c] = counts[mask].sum(axis=0)
     return aggregated
 
 def compute_cell_type_proportions(

@@ -18,10 +18,12 @@ class PatientBatch:
     cell_type_proportions: torch.Tensor # shape (N, C)
     responses: torch.Tensor  # shape (N,)
     subtype_ids: torch.Tensor  # shape (N,)
+    pre_ncells: torch.Tensor  # shape (N, C) - number of cells summed per cell type
+    on_ncells: torch.Tensor  # shape (N, C) - number of cells summed per cell type
 
     def to(self, device: torch.device | str) -> "PatientBatch":
         """Move all tensors to a specific device.
-        
+
         Args:
             device: Device to move tensors to.
 
@@ -36,6 +38,8 @@ class PatientBatch:
             cell_type_proportions=self.cell_type_proportions.to(device),
             responses=self.responses.to(device),
             subtype_ids=self.subtype_ids.to(device),
+            pre_ncells=self.pre_ncells.to(device),
+            on_ncells=self.on_ncells.to(device),
         )
 
 
@@ -125,6 +129,12 @@ class SimulatedData:
         else:
             raise ValueError("pre_cell_types is required to compute cell type proportions.")
 
+        on_cell_type_lists = None
+        if self.post_cell_types is not None:
+            on_cell_type_lists = [self.post_cell_types[i] for i in idx.tolist()]
+        else:
+            raise ValueError("post_cell_types is required to compute cell type proportions.")
+
         cell_type_proportions = compute_cell_type_proportions(
             cell_type_lists,
             subtype_ids,
@@ -132,10 +142,24 @@ class SimulatedData:
             n_cell_types=self.config.n_cell_types,
         )
 
+        # Compute number of cells per cell type for pre and on treatment
+        n_patients_batch = len(idx)
+        n_cell_types = self.config.n_cell_types
+        pre_ncells = np.zeros((n_patients_batch, n_cell_types), dtype=np.int64)
+        on_ncells = np.zeros((n_patients_batch, n_cell_types), dtype=np.int64)
+
+        for i, (pre_types, on_types) in enumerate(zip(cell_type_lists, on_cell_type_lists)):
+            pre_counts_per_type = np.bincount(pre_types, minlength=n_cell_types)
+            on_counts_per_type = np.bincount(on_types, minlength=n_cell_types)
+            pre_ncells[i] = pre_counts_per_type[:n_cell_types]
+            on_ncells[i] = on_counts_per_type[:n_cell_types]
+
         return PatientBatch(
             pre_counts=torch.as_tensor(pre_counts, dtype=torch.float32, device=device),
             on_counts=torch.as_tensor(on_counts, dtype=torch.float32, device=device),
             cell_type_proportions=torch.as_tensor(cell_type_proportions, dtype=torch.float32, device=device),
             responses=torch.as_tensor(responses, dtype=torch.float32, device=device),
             subtype_ids=torch.as_tensor(subtype_ids, dtype=torch.long, device=device),
+            pre_ncells=torch.as_tensor(pre_ncells, dtype=torch.float32, device=device),
+            on_ncells=torch.as_tensor(on_ncells, dtype=torch.float32, device=device),
         )

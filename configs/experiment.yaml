@@ -34,8 +34,7 @@ model:
   subtype_rate: 0.1
   u_dim: 5
   z_dim: 6
-  lambda_orth: 0.0
-run_name: baseline
+run_name: poster_run1
 vi:
   delta_warmup_epochs: 0
   delta_warmup_lr: null

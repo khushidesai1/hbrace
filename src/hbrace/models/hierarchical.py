@@ -7,6 +7,7 @@ from pyro.distributions import (
     Bernoulli,
     Dirichlet,
     Gamma,
+    HalfCauchy,
     Laplace,
     NegativeBinomial,
     Normal,
@@ -52,12 +53,12 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
 
     # Mean and dispersion shifts for on-treatment distributions.
     if config.gene_sparsity:
-        # Sparsity version: tighter prior
+        # Sparsity version: 5x wider prior (mean=5.0, up from 1.0)
         Delta_std = sample(
             "Delta_std",
             Gamma(
                 torch.full((C, G, d_z), 2.0, device=device),
-                torch.full((C, G, d_z), 5.0, device=device),  # rate=5.0, mean=0.4
+                torch.full((C, G, d_z), 0.4, device=device),  # rate=0.4, mean=5.0 (5x increase)
             ).to_event(3),
         )
     else:
@@ -83,14 +84,14 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         "W",
         Normal(
             torch.zeros((C, d_z), device=device),
-            torch.full((C, d_z), 1.0, device=device),  # Moderate value balanced with less sparse compositions
+            torch.full((C, d_z), 10.0, device=device),  # 5x wider: 10.0 (up from 2.0)
         ).to_event(2),
     )
     epsilon_std = sample(
         "epsilon_std",
         Gamma(
             torch.full((C,), 2.0, device=device),  # shape
-            torch.full((C,), 25.0, device=device),  # rate -> mean 0.08 (moderate noise)
+            torch.full((C,), 2.0, device=device),  # rate=2.0 -> mean 1.0 (5x wider, up from 0.2)
         ).to_event(1),
     )
 
@@ -111,12 +112,20 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         ),
     )
     if config.gene_sparsity:
-        # Sparsity version: Laplace prior for sparsity
+        # Hierarchical horseshoe-like prior for sparsity with heavy tails
+        # β_t[g] ~ Normal(0, τ * λ_g)
+        # λ_g ~ HalfCauchy(1)  (gene-specific scale)
+        # τ   ~ HalfCauchy(1)  (global scale)
+        tau = sample("beta_t_tau", HalfCauchy(torch.ones((), device=device)))
+        lambda_g = sample(
+            "beta_t_lambda_g",
+            HalfCauchy(torch.ones((G,), device=device)).to_event(1),
+        )
         beta_t = sample(
             "beta_t",
-            Laplace(
+            Normal(
                 torch.zeros((G,), device=device),
-                torch.full((G,), config.beta_t_laplace_scale, device=device),
+                tau * lambda_g,
             ).to_event(1),
         )
     else:
@@ -209,11 +218,16 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
             ).to_event(2),
         )
 
+        # Scale dispersion by number of cells summed
+        m_pre = batch.pre_ncells  # (N, C)
+        m_pre_expand = m_pre.unsqueeze(-1)  # (N, C, 1)
+        phi_p_sum = phi_p * m_pre_expand.clamp_min(1.0)  # (N, C, G)
+
         logits_p = nb_logits(mu_p, phi_p)
         f_p = sample(
             "f_p",
             NegativeBinomial(
-                total_count=phi_p,
+                total_count=phi_p_sum,
                 logits=logits_p,
             ).to_event(2),
             obs=batch.pre_counts,
@@ -281,11 +295,16 @@ def hierarchical_model(batch: PatientBatch, config: ModelConfig) -> None:
         else:
             raise ValueError(f"Unknown composition_model: {config.composition_model}")
 
+        # Scale on-treatment dispersion by number of cells summed
+        m_on = batch.on_ncells  # (N, C)
+        m_on_expand = m_on.unsqueeze(-1)  # (N, C, 1)
+        phi_t_sum = phi_t * m_on_expand.clamp_min(1.0)  # (N, C, G)
+
         logits_t = nb_logits(mu_t_i, phi_t)
         f_t = sample(
             "f_t",
             NegativeBinomial(
-                total_count=phi_t,
+                total_count=phi_t_sum,
                 logits=logits_t,
             ).to_event(2),
             obs=batch.on_counts,

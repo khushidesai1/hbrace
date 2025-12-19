@@ -435,6 +435,30 @@ class CausalInferenceEvaluator:
         # All latents (u, z, mu_t, beta_*) remain fixed
         p_y_counterfactual = self.predict_response(pi_t_counterfactual, patient_indices)
 
+        # DIAGNOSTIC: Check delta_sq distribution (user's suggestion)
+        # This helps diagnose why ACE might be collapsing to 0
+        mu_t = self.posterior['mu_t'].cpu().numpy()[:, patient_indices, :, :]  # (S, N, C, G)
+        beta_t = self.posterior['beta_t'].cpu().numpy()  # (S, G)
+        while beta_t.ndim > 2 and beta_t.shape[1] == 1:
+            beta_t = np.squeeze(beta_t, axis=1)
+
+        # Compute gene expression under factual and counterfactual compositions
+        q_f = np.einsum('snc,sncg->sng', pi_t_clean, mu_t)  # (S, N, G)
+        q_cf = np.einsum('snc,sncg->sng', pi_t_counterfactual, mu_t)  # (S, N, G)
+
+        # Compute delta_sq = sum_g (q_cf - q_f) * beta_t across genes
+        delta_sq = ((q_cf - q_f) * beta_t[:, None, :]).sum(axis=-1)  # (S, N)
+
+        # Store diagnostic info
+        self._delta_sq_diagnostic = {
+            'delta_sq': delta_sq,
+            'mean': delta_sq.mean(),
+            'std': delta_sq.std(),
+            'min': delta_sq.min(),
+            'max': delta_sq.max(),
+            'median': np.median(delta_sq),
+        }
+
         # Compute ITE for each posterior sample and patient
         ite = p_y_counterfactual - p_y_factual  # (n_samples, n_patients)
 
